@@ -295,6 +295,24 @@ fn test_get_balance_reflects_ticket_and_sponsor_payments() {
 }
 
 #[test]
+fn test_invalid_tier_index_rejected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin.mint(&buyer, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    // default_tiers has 2 tiers (index 0 and 1); index 99 is out of range
+    let result = client.try_buy_ticket(&buyer, &event_id, &99);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_zero_price_tier_rejected() {
     let env = Env::default();
     env.mock_all_auths();
