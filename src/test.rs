@@ -271,6 +271,25 @@ fn test_double_redeem_fails() {
 }
 
 #[test]
+fn test_non_organizer_cannot_redeem_ticket() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    let result = client.try_redeem_ticket(&impostor, &event_id, &ticket_id);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_get_token_returns_configured_address() {
     let env = Env::default();
     env.mock_all_auths();
