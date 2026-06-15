@@ -271,6 +271,30 @@ fn test_double_redeem_fails() {
 }
 
 #[test]
+fn test_get_balance_reflects_ticket_and_sponsor_payments() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+
+    token_admin.mint(&buyer, &100_000_000_i128);   // 10 USDC
+    token_admin.mint(&sponsor, &500_000_000_i128); // 50 USDC
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    assert_eq!(client.get_balance(&event_id), 0);
+
+    client.buy_ticket(&buyer, &event_id, &0); // 1 USDC
+    assert_eq!(client.get_balance(&event_id), 10_000_000_i128);
+
+    client.sponsor_event(&sponsor, &event_id, &200_000_000_i128); // 20 USDC
+    assert_eq!(client.get_balance(&event_id), 210_000_000_i128);
+}
+
+#[test]
 fn test_zero_price_tier_rejected() {
     let env = Env::default();
     env.mock_all_auths();
