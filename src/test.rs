@@ -271,6 +271,20 @@ fn test_double_redeem_fails() {
 }
 
 #[test]
+fn test_sponsor_nonexistent_event_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let sponsor = Address::generate(&env);
+    token_admin.mint(&sponsor, &500_000_000_i128);
+
+    // No event created — event_id 99 does not exist
+    let result = client.try_sponsor_event(&sponsor, &99, &100_000_000_i128);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_non_organizer_cannot_redeem_ticket() {
     let env = Env::default();
     env.mock_all_auths();
