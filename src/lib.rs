@@ -373,6 +373,14 @@ impl NovaEventsContract {
             .unwrap_or(0)
     }
 
+    /// Returns the token contract address configured during initialize.
+    pub fn get_token(env: Env) -> Address {
+        env.storage()
+            .instance()
+            .get(&DataKey::Token)
+            .expect("not initialized")
+    }
+
     /// Returns the current USDC balance held by the contract for an event.
     /// Convenience wrapper around get_event so callers don't decode the full struct.
     pub fn get_balance(env: Env, event_id: u32) -> i128 {

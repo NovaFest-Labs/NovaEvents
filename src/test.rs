@@ -271,6 +271,14 @@ fn test_double_redeem_fails() {
 }
 
 #[test]
+fn test_get_token_returns_configured_address() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (token_addr, _, _, client) = setup(&env);
+    assert_eq!(client.get_token(), token_addr);
+}
+
+#[test]
 fn test_get_balance_reflects_ticket_and_sponsor_payments() {
     let env = Env::default();
     env.mock_all_auths();
