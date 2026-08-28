@@ -301,6 +301,75 @@ impl NovaEventsContract {
         Ok(event_id)
     }
 
+    /// Organizer updates basic event details (name, description, venue, date).
+    ///
+    /// Rules enforced:
+    /// - Only callable by the original event organizer.
+    /// - The event must be in Active status.
+    /// - Cannot be modified once tickets have been sold (tickets_sold > 0 across tiers).
+    /// - Validation matches create_event: non-empty strings and date not in the past.
+    pub fn update_event_details(
+        env: Env,
+        organizer: Address,
+        event_id: u32,
+        name: String,
+        description: String,
+        venue: String,
+        date_unix: u64,
+    ) -> Result<(), Error> {
+        organizer.require_auth();
+
+        let mut event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+
+        if event.organizer != organizer {
+            return Err(Error::Unauthorized);
+        }
+        if event.status != EventStatus::Active {
+            return Err(Error::EventNotActive);
+        }
+
+        let tiers: Vec<TicketTier> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Tiers(event_id))
+            .ok_or(Error::TiersNotFound)?;
+
+        for i in 0..tiers.len() {
+            let t: TicketTier = tiers.get(i).unwrap();
+            if t.tickets_sold > 0 {
+                return Err(Error::EventNotActive);
+            }
+        }
+
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+        if description.is_empty() {
+            return Err(Error::EmptyDescription);
+        }
+        if venue.is_empty() {
+            return Err(Error::EmptyVenue);
+        }
+        if date_unix < env.ledger().timestamp() {
+            return Err(Error::DateInPast);
+        }
+
+        event.name = name;
+        event.description = description;
+        event.venue = venue;
+        event.date_unix = date_unix;
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        Ok(())
+    }
+
     /// Buyer purchases a ticket in a given tier.
     /// Transfers `tier.price` USDC from buyer to this contract.
     /// Returns the new ticket ID.

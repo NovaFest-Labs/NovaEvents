@@ -1089,7 +1089,6 @@ fn test_get_event_summary_invariant_across_full_lifecycle() {
     env.mock_all_auths();
 
     let (_, token_admin, _, client) = setup(&env);
-
     let organizer = Address::generate(&env);
     let attendee_a = Address::generate(&env);
     let attendee_b = Address::generate(&env);
@@ -1224,4 +1223,70 @@ fn test_get_event_summary_nonexistent_event_fails() {
 
     let result = client.try_get_event_summary(&999);
     assert_eq!(result, Err(Ok(Error::EventNotFound)));
+}
+
+// ─── update_event_details tests ───────────────────────────────────────────────
+
+#[test]
+fn test_update_event_details_happy_path_and_guards() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    token_admin.mint(&buyer, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    // 1. Happy path update before any tickets are sold
+    client.update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "Updated Conference 2026"),
+        &String::from_str(&env, "New exciting description"),
+        &String::from_str(&env, "Grand Hall B"),
+        &1_800_000_000_u64,
+    );
+
+    let updated = client.get_event(&event_id);
+    assert_eq!(updated.name, String::from_str(&env, "Updated Conference 2026"));
+    assert_eq!(updated.description, String::from_str(&env, "New exciting description"));
+    assert_eq!(updated.venue, String::from_str(&env, "Grand Hall B"));
+    assert_eq!(updated.date_unix, 1_800_000_000_u64);
+
+    // 2. Non-organizer update fails with Unauthorized
+    let unauth_res = client.try_update_event_details(
+        &impostor,
+        &event_id,
+        &String::from_str(&env, "Hacked Event"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &1_800_000_000_u64,
+    );
+    assert_eq!(unauth_res, Err(Ok(Error::Unauthorized)));
+
+    // 3. Validation errors: empty name fails
+    let empty_name_res = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &1_800_000_000_u64,
+    );
+    assert_eq!(empty_name_res, Err(Ok(Error::EmptyName)));
+
+    // 4. Once a ticket is sold, updating details is blocked
+    client.buy_ticket(&buyer, &event_id, &0);
+    let post_sale_res = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "Post Sale Change"),
+        &String::from_str(&env, "Desc"),
+        &String::from_str(&env, "Venue"),
+        &1_800_000_000_u64,
+    );
+    assert_eq!(post_sale_res, Err(Ok(Error::EventNotActive)));
 }
