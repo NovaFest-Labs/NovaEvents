@@ -183,6 +183,7 @@ pub enum DataKey {
     Ticket(u32, u32),
     Sponsorships(u32),
     Payouts(u32),
+    OrganizerEvents(Address),
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
@@ -297,6 +298,16 @@ impl NovaEventsContract {
         env.storage()
             .persistent()
             .set(&DataKey::Sponsorships(event_id), &empty_s);
+
+        let mut organizer_events: Vec<u32> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::OrganizerEvents(organizer.clone()))
+            .unwrap_or_else(|| Vec::new(&env));
+        organizer_events.push_back(event_id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::OrganizerEvents(organizer), &organizer_events);
 
         Ok(event_id)
     }
@@ -799,6 +810,15 @@ impl NovaEventsContract {
 
         // Return share in basis points (sponsor_total / grand_total * 10_000)
         sponsor_total * 10_000 / grand_total
+    }
+
+    /// Returns the list of event IDs created by a specific organizer address.
+    /// Returns an empty list if the address has not created any events.
+    pub fn get_events_by_organizer(env: Env, organizer: Address) -> Vec<u32> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::OrganizerEvents(organizer))
+            .unwrap_or_else(|| Vec::new(&env))
     }
 }
 
