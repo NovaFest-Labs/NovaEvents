@@ -75,6 +75,8 @@ pub enum Error {
     EventNotEnded = 24,
     /// Event has reached the maximum number of recorded payouts.
     TooManyPayouts = 25,
+    /// Destination address is the same as the current ticket owner.
+    InvalidRecipient = 26,
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -421,6 +423,10 @@ impl NovaEventsContract {
         to: Address,
     ) -> Result<(), Error> {
         from.require_auth();
+
+        if from == to {
+            return Err(Error::InvalidRecipient);
+        }
 
         let event: Event = env
             .storage()
