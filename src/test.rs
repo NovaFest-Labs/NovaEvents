@@ -801,6 +801,30 @@ fn test_transfer_ticket_no_resale_rules() {
     assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
 }
 
+#[test]
+fn test_transfer_ticket_to_same_owner_fails() {
+    // Transferring a ticket to the same owner (self-transfer) must fail with InvalidRecipient.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    // Attempting to transfer the ticket to oneself (buyer -> buyer) must fail
+    let result = client.try_transfer_ticket(&buyer, &event_id, &ticket_id, &buyer);
+    assert_eq!(result, Err(Ok(Error::InvalidRecipient)));
+
+    // Ticket ownership must remain unchanged
+    let ticket = client.get_ticket(&event_id, &ticket_id);
+    assert_eq!(ticket.owner, buyer);
+}
+
 // ─── Payout tests ─────────────────────────────────────────────────────────────
 
 /// Helper: create an event, sell a ticket to fund its balance, then end it.
