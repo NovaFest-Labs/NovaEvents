@@ -210,11 +210,7 @@ impl NovaEventsContract {
     /// Rules enforced:
     /// - Contract must be initialized.
     /// - `current_admin` must be the current recorded admin and must authorize the call.
-    pub fn set_admin(
-        env: Env,
-        current_admin: Address,
-        new_admin: Address,
-    ) -> Result<(), Error> {
+    pub fn set_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), Error> {
         current_admin.require_auth();
 
         let admin: Address = env
