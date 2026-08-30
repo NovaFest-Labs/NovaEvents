@@ -140,12 +140,18 @@ the full option list.
 
 ### Deploy to testnet
 
+You can automatically build, deploy, and initialize the contract on Stellar testnet using the deployment script:
+
 ```bash
-stellar contract deploy \
-  --wasm target/wasm32v1-none/release/nova_events.wasm \
-  --network testnet \
-  --source <your-key-name>
+# Deploys with your configured Stellar key identity
+./scripts/deploy-testnet.sh --source <your-key-name>
 ```
+
+Options:
+- `--source <name>`: Keypair name to sign deployment (default: `default`)
+- `--admin <address>`: Admin address to set during initialize (default: public address of `--source`)
+- `--token <address>`: USDC token contract address (default: testnet USDC)
+- `--skip-build`: Skip WASM build and deploy existing binary
 
 **Testnet contract ID:** `CABTSQOXHOOAFFWBPDIXAPAL7KKV76WFL3WLGBUH6SLJ7R2BO5YNWKFU`
 
