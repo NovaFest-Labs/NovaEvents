@@ -266,7 +266,7 @@ impl NovaEventsContract {
         env.storage().persistent().set(
             &DataKey::Event(event_id),
             &Event {
-                organizer,
+                organizer: organizer.clone(),
                 name,
                 description,
                 venue,
