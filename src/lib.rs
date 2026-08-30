@@ -205,6 +205,28 @@ impl NovaEventsContract {
         Ok(())
     }
 
+    /// Rotates the contract admin address.
+    ///
+    /// Rules enforced:
+    /// - Contract must be initialized.
+    /// - `current_admin` must be the current recorded admin and must authorize the call.
+    pub fn set_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), Error> {
+        current_admin.require_auth();
+
+        let admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+
+        if current_admin != admin {
+            return Err(Error::Unauthorized);
+        }
+
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Ok(())
+    }
+
     /// Organizer creates a new event with one or more ticket tiers.
     /// Returns the new event ID.
     // Each parameter is an independent required field on a Soroban entrypoint;

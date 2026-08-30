@@ -1225,3 +1225,44 @@ fn test_get_event_summary_nonexistent_event_fails() {
     let result = client.try_get_event_summary(&999);
     assert_eq!(result, Err(Ok(Error::EventNotFound)));
 }
+
+// ─── set_admin tests ──────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_admin_rotates_admin_successfully() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let current_admin = client.get_admin();
+    let new_admin = Address::generate(&env);
+
+    // Current admin rotates admin to new_admin
+    client.set_admin(&current_admin, &new_admin);
+
+    // get_admin reflects new admin
+    assert_eq!(client.get_admin(), new_admin);
+
+    // New admin can rotate again
+    let next_admin = Address::generate(&env);
+    client.set_admin(&new_admin, &next_admin);
+    assert_eq!(client.get_admin(), next_admin);
+}
+
+#[test]
+fn test_set_admin_non_admin_fails() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let original_admin = client.get_admin();
+    let impostor = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    // Non-admin impostor attempting to rotate admin must fail
+    let result = client.try_set_admin(&impostor, &new_admin);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+
+    // Admin must remain unchanged
+    assert_eq!(client.get_admin(), original_admin);
+}
