@@ -1321,3 +1321,109 @@ fn test_paused_contract_rejects_state_changing_calls_and_unpause_restores() {
     client.transfer_ticket(&buyer, &event_id, &ticket_id, &recipient);
     assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
 }
+
+// ─── Ticket Resale and Royalty Tests ──────────────────────────────────────────
+
+#[test]
+fn test_set_resale_rules_happy_path_and_validation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let impostor = Address::generate(&env);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    assert_eq!(client.get_resale_rules(&event_id), None);
+
+    // Non-organizer cannot configure resale rules
+    let imp_res = client.try_set_resale_rules(&impostor, &event_id, &50_000_000_i128, &500);
+    assert_eq!(imp_res, Err(Ok(Error::Unauthorized)));
+
+    // Invalid max price (<= 0) rejected
+    let zero_price = client.try_set_resale_rules(&organizer, &event_id, &0_i128, &500);
+    assert_eq!(zero_price, Err(Ok(Error::InvalidResalePrice)));
+
+    // Invalid royalty basis points (> 10000) rejected
+    let bad_bps = client.try_set_resale_rules(&organizer, &event_id, &50_000_000_i128, &10_001);
+    assert_eq!(bad_bps, Err(Ok(Error::InvalidRoyaltyBasisPoints)));
+
+    // Organizer sets 50 USDC max price with 10% (1000 bps) royalty
+    client.set_resale_rules(&organizer, &event_id, &50_000_000_i128, &1000);
+    let rules = client.get_resale_rules(&event_id).unwrap();
+    assert_eq!(rules.max_price, 50_000_000_i128);
+    assert_eq!(rules.royalty_basis_points, 1000);
+}
+
+#[test]
+fn test_resell_ticket_with_royalty_split() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin.mint(&seller, &100_000_000_i128);
+    token_admin.mint(&buyer, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&seller, &event_id, &0); // bought at 10 USDC (10_000_000)
+
+    // Organizer sets max resale price = 20 USDC, royalty = 10% (1000 bps)
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1000);
+
+    // Reselling above cap (25 USDC > 20 USDC) is rejected
+    let above_cap = client.try_resell_ticket(&seller, &event_id, &ticket_id, &buyer, &25_000_000_i128);
+    assert_eq!(above_cap, Err(Ok(Error::InvalidResalePrice)));
+
+    // Resell at 20 USDC (20_000_000 stroops)
+    // Royalty (10%) = 2 USDC (2_000_000)
+    // Seller gets 18 USDC (18_000_000)
+    let initial_organizer_balance = TokenClient::new(&env, &token_addr).balance(&organizer);
+    let initial_seller_balance = TokenClient::new(&env, &token_addr).balance(&seller);
+    let initial_buyer_balance = TokenClient::new(&env, &token_addr).balance(&buyer);
+
+    client.resell_ticket(&seller, &event_id, &ticket_id, &buyer, &20_000_000_i128);
+
+    // Verify ticket ownership transferred to buyer
+    let ticket = client.get_ticket(&event_id, &ticket_id);
+    assert_eq!(ticket.owner, buyer);
+
+    // Verify token balances
+    let token = TokenClient::new(&env, &token_addr);
+    assert_eq!(token.balance(&buyer), initial_buyer_balance - 20_000_000_i128);
+    assert_eq!(token.balance(&seller), initial_seller_balance + 18_000_000_i128);
+    assert_eq!(token.balance(&organizer), initial_organizer_balance + 2_000_000_i128);
+}
+
+#[test]
+fn test_resell_ticket_without_rules_and_free_transfer_unaffected() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let seller = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let friend = Address::generate(&env);
+
+    token_admin.mint(&seller, &100_000_000_i128);
+    token_admin.mint(&buyer, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id1 = client.buy_ticket(&seller, &event_id, &0);
+    let ticket_id2 = client.buy_ticket(&seller, &event_id, &0);
+
+    // Resell ticket 1 with no resale rules configured (100% price to seller, 0 royalty)
+    let initial_seller_bal = TokenClient::new(&env, &token_addr).balance(&seller);
+    client.resell_ticket(&seller, &event_id, &ticket_id1, &buyer, &15_000_000_i128);
+    assert_eq!(client.get_ticket(&event_id, &ticket_id1).owner, buyer);
+    assert_eq!(TokenClient::new(&env, &token_addr).balance(&seller), initial_seller_bal + 15_000_000_i128);
+
+    // Free transfer ticket 2 with no payments (transfer_ticket untouched)
+    client.transfer_ticket(&seller, &event_id, &ticket_id2, &friend);
+    assert_eq!(client.get_ticket(&event_id, &ticket_id2).owner, friend);
+}

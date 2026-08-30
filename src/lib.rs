@@ -79,9 +79,21 @@ pub enum Error {
     InvalidRecipient = 26,
     /// Contract is currently paused by admin.
     ContractPaused = 27,
+    /// Resale price is invalid or exceeds the event cap.
+    InvalidResalePrice = 28,
+    /// Royalty basis points cannot exceed 10000 (100%).
+    InvalidRoyaltyBasisPoints = 29,
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+/// Rules for paid ticket resale and organizer royalties.
+#[contracttype]
+#[derive(Clone, PartialEq, Debug)]
+pub struct ResaleRules {
+    pub max_price: i128,
+    pub royalty_basis_points: u32,
+}
 
 /// Input shape for a ticket tier when creating an event.
 #[contracttype]
@@ -186,6 +198,7 @@ pub enum DataKey {
     Sponsorships(u32),
     Payouts(u32),
     Paused,
+    ResaleRules(u32),
 }
 
 fn require_not_paused(env: &Env) -> Result<(), Error> {
@@ -557,6 +570,130 @@ impl NovaEventsContract {
         // A redeemed ticket cannot change hands.
         if ticket.redeemed {
             return Err(Error::AlreadyRedeemed);
+        }
+
+        ticket.owner = to;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(event_id, ticket_id), &ticket);
+
+        Ok(())
+    }
+
+    /// Organizer configures optional ticket resale price cap and royalty basis points (e.g. 500 = 5%).
+    pub fn set_resale_rules(
+        env: Env,
+        organizer: Address,
+        event_id: u32,
+        max_price: i128,
+        royalty_basis_points: u32,
+    ) -> Result<(), Error> {
+        organizer.require_auth();
+
+        if max_price <= 0 {
+            return Err(Error::InvalidResalePrice);
+        }
+        if royalty_basis_points > 10_000 {
+            return Err(Error::InvalidRoyaltyBasisPoints);
+        }
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+        if event.organizer != organizer {
+            return Err(Error::Unauthorized);
+        }
+
+        env.storage().persistent().set(
+            &DataKey::ResaleRules(event_id),
+            &ResaleRules {
+                max_price,
+                royalty_basis_points,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns configured resale rules for an event, if any.
+    pub fn get_resale_rules(env: Env, event_id: u32) -> Option<ResaleRules> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ResaleRules(event_id))
+    }
+
+    /// Buyer purchases a ticket directly from the current ticket owner.
+    /// Deducts `price` from buyer (`to`), distributes organizer royalty, and credits seller (`from`).
+    pub fn resell_ticket(
+        env: Env,
+        from: Address,
+        event_id: u32,
+        ticket_id: u32,
+        to: Address,
+        price: i128,
+    ) -> Result<(), Error> {
+        require_not_paused(&env)?;
+        from.require_auth();
+        to.require_auth();
+
+        if price <= 0 {
+            return Err(Error::InvalidResalePrice);
+        }
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+
+        if event.status == EventStatus::Cancelled || event.status == EventStatus::Ended {
+            return Err(Error::EventNotActive);
+        }
+
+        let mut ticket: Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(event_id, ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+
+        if ticket.owner != from {
+            return Err(Error::NotOwner);
+        }
+        if to == from {
+            return Err(Error::InvalidRecipient);
+        }
+        if ticket.redeemed {
+            return Err(Error::AlreadyRedeemed);
+        }
+
+        let rules_opt: Option<ResaleRules> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ResaleRules(event_id));
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+
+        if let Some(rules) = rules_opt {
+            if price > rules.max_price {
+                return Err(Error::InvalidResalePrice);
+            }
+            let royalty = (price * rules.royalty_basis_points as i128) / 10_000;
+            let seller_amount = price - royalty;
+
+            if seller_amount > 0 {
+                TokenClient::new(&env, &token_addr).transfer(&to, &from, &seller_amount);
+            }
+            if royalty > 0 {
+                TokenClient::new(&env, &token_addr).transfer(&to, &event.organizer, &royalty);
+            }
+        } else {
+            TokenClient::new(&env, &token_addr).transfer(&to, &from, &price);
         }
 
         ticket.owner = to;
