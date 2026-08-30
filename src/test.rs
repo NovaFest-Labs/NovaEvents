@@ -1321,3 +1321,122 @@ fn test_paused_contract_rejects_state_changing_calls_and_unpause_restores() {
     client.transfer_ticket(&buyer, &event_id, &ticket_id, &recipient);
     assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
 }
+
+#[test]
+fn test_cancel_event_with_ticket_buyers_and_sponsors_refunds_all() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin_client, _, client) = setup(&env);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+
+    token_admin_client.mint(&buyer, &100_000_000);
+    token_admin_client.mint(&sponsor, &200_000_000);
+
+    let event_id = client.create_event(
+        &organizer,
+        &String::from_str(&env, "Annual Gala"),
+        &String::from_str(&env, "Charity gala"),
+        &String::from_str(&env, "Main Hall"),
+        &1_750_000_000_u64,
+        &500_000_000_i128,
+        &default_tiers(&env),
+    );
+
+    // Buy ticket tier 0 (price = 10_000_000)
+    let _ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+    assert_eq!(token.balance(&buyer), 90_000_000);
+
+    // Sponsor event (amount = 50_000_000)
+    client.sponsor_event(&sponsor, &event_id, &50_000_000);
+    assert_eq!(token.balance(&sponsor), 150_000_000);
+
+    // Contract holds ticket + sponsorship funds (60_000_000)
+    assert_eq!(client.get_balance(&event_id), 60_000_000);
+
+    // Cancel event as organizer
+    client.cancel_event(&organizer, &event_id);
+
+    // Verify event state
+    let event = client.get_event(&event_id);
+    assert_eq!(event.status, EventStatus::Cancelled);
+    assert_eq!(event.balance, 0);
+
+    // Verify buyer received full refund (10_000_000)
+    assert_eq!(token.balance(&buyer), 100_000_000);
+
+    // Verify sponsor received full refund (50_000_000)
+    assert_eq!(token.balance(&sponsor), 200_000_000);
+}
+
+#[test]
+fn test_cancel_event_with_zero_sponsors_succeeds() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin_client, _, client) = setup(&env);
+    let token = TokenClient::new(&env, &token_addr);
+
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin_client.mint(&buyer, &50_000_000);
+
+    let event_id = client.create_event(
+        &organizer,
+        &String::from_str(&env, "Tech Meetup"),
+        &String::from_str(&env, "Developer meetup"),
+        &String::from_str(&env, "Auditorium"),
+        &1_750_000_000_u64,
+        &100_000_000_i128,
+        &default_tiers(&env),
+    );
+
+    // Buy ticket tier 0 (price = 10_000_000)
+    let _ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+    assert_eq!(token.balance(&buyer), 40_000_000);
+
+    // Cancel with 0 sponsors
+    client.cancel_event(&organizer, &event_id);
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.status, EventStatus::Cancelled);
+    assert_eq!(event.balance, 0);
+    assert_eq!(token.balance(&buyer), 50_000_000);
+}
+
+#[test]
+fn test_cancel_event_access_control_and_lifecycle_validation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+
+    let organizer = Address::generate(&env);
+    let non_organizer = Address::generate(&env);
+
+    let event_id = client.create_event(
+        &organizer,
+        &String::from_str(&env, "Festival"),
+        &String::from_str(&env, "Music festival"),
+        &String::from_str(&env, "Park"),
+        &1_750_000_000_u64,
+        &100_000_000_i128,
+        &default_tiers(&env),
+    );
+
+    // Non-organizer cannot cancel
+    let unauth_res = client.try_cancel_event(&non_organizer, &event_id);
+    assert_eq!(unauth_res, Err(Ok(Error::Unauthorized)));
+
+    // Cancel succeeds
+    client.cancel_event(&organizer, &event_id);
+
+    // Cannot cancel already cancelled event
+    let double_cancel = client.try_cancel_event(&organizer, &event_id);
+    assert_eq!(double_cancel, Err(Ok(Error::EventNotActive)));
+}
