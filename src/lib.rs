@@ -511,6 +511,87 @@ impl NovaEventsContract {
         Ok(())
     }
 
+    /// Organizer cancels an event, transitioning it from `Active` to `Cancelled`.
+    /// Automatically refunds all ticket buyers for unredeemed tickets and
+    /// refunds all sponsors their contributed amounts.
+    pub fn cancel_event(env: Env, organizer: Address, event_id: u32) -> Result<(), Error> {
+        require_not_paused(&env)?;
+        organizer.require_auth();
+
+        let mut event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+
+        if event.organizer != organizer {
+            return Err(Error::Unauthorized);
+        }
+        if event.status != EventStatus::Active {
+            return Err(Error::EventNotActive);
+        }
+
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+
+        let token_client = TokenClient::new(&env, &token_addr);
+        let contract_addr = env.current_contract_address();
+
+        // 1. Refund ticket buyers
+        let tiers: Vec<TicketTier> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Tiers(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        let ticket_count: u32 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::TicketCounter(event_id))
+            .unwrap_or(0);
+
+        for ticket_id in 0..ticket_count {
+            if let Some(ticket) = env
+                .storage()
+                .persistent()
+                .get::<_, Ticket>(&DataKey::Ticket(event_id, ticket_id))
+            {
+                if !ticket.redeemed {
+                    if let Some(tier) = tiers.get(ticket.tier_index) {
+                        if tier.price > 0 {
+                            token_client.transfer(&contract_addr, &ticket.owner, &tier.price);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Refund all sponsors
+        let sponsorships: Vec<Sponsorship> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Sponsorships(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+
+        for sponsorship in sponsorships.iter() {
+            if sponsorship.amount > 0 {
+                token_client.transfer(&contract_addr, &sponsorship.sponsor, &sponsorship.amount);
+            }
+        }
+
+        // 3. Mark event as Cancelled and reset balance
+        event.status = EventStatus::Cancelled;
+        event.balance = 0;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        Ok(())
+    }
+
     /// Transfer ticket ownership from the current owner to a new address.
     ///
     /// Rules enforced:
