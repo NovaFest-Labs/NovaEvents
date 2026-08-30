@@ -1225,3 +1225,41 @@ fn test_get_event_summary_nonexistent_event_fails() {
     let result = client.try_get_event_summary(&999);
     assert_eq!(result, Err(Ok(Error::EventNotFound)));
 }
+
+// ─── get_events_by_organizer tests ────────────────────────────────────────────
+
+#[test]
+fn test_get_events_by_organizer_empty_and_multiple() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer_a = Address::generate(&env);
+    let organizer_b = Address::generate(&env);
+    let random_user = Address::generate(&env);
+
+    // Address that never organized anything returns empty Vec (not an error)
+    let empty_events = client.get_events_by_organizer(&random_user);
+    assert_eq!(empty_events.len(), 0);
+
+    // Organizer A creates 2 events
+    let id_a0 = create_test_event(&env, &client, &organizer_a);
+    let id_a1 = create_test_event(&env, &client, &organizer_a);
+
+    // Organizer B creates 1 event
+    let id_b0 = create_test_event(&env, &client, &organizer_b);
+
+    // Check Organizer A's events
+    let events_a = client.get_events_by_organizer(&organizer_a);
+    assert_eq!(events_a.len(), 2);
+    assert_eq!(events_a.get(0).unwrap(), id_a0);
+    assert_eq!(events_a.get(1).unwrap(), id_a1);
+
+    // Check Organizer B's events
+    let events_b = client.get_events_by_organizer(&organizer_b);
+    assert_eq!(events_b.len(), 1);
+    assert_eq!(events_b.get(0).unwrap(), id_b0);
+
+    // Random user still has 0 events
+    assert_eq!(client.get_events_by_organizer(&random_user).len(), 0);
+}
