@@ -220,6 +220,22 @@ impl NovaEventsContract {
         Ok(())
     }
 
+    /// Rotates the contract admin to a new address.
+    /// Callable only by the current registered admin.
+    pub fn set_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), Error> {
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if current_admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Ok(())
+    }
+
     /// Emergency halt for all state-changing contract functions.
     /// Callable only by the registered admin.
     pub fn pause(env: Env, admin: Address) -> Result<(), Error> {

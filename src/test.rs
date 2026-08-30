@@ -1321,3 +1321,47 @@ fn test_paused_contract_rejects_state_changing_calls_and_unpause_restores() {
     client.transfer_ticket(&buyer, &event_id, &ticket_id, &recipient);
     assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
 }
+
+// ─── set_admin Tests ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_admin_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let current_admin = client.get_admin();
+    let new_admin = Address::generate(&env);
+
+    assert_eq!(client.get_admin(), current_admin);
+
+    client.set_admin(&current_admin, &new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+
+    // New admin can execute admin actions (like pause)
+    client.pause(&new_admin);
+    assert!(client.is_paused());
+
+    // Old admin can no longer pause/unpause
+    let old_res = client.try_unpause(&current_admin);
+    assert_eq!(old_res, Err(Ok(Error::Unauthorized)));
+
+    // New admin can unpause
+    client.unpause(&new_admin);
+    assert!(!client.is_paused());
+}
+
+#[test]
+fn test_set_admin_rejected_for_non_admin() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let current_admin = client.get_admin();
+    let impostor = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let res = client.try_set_admin(&impostor, &new_admin);
+    assert_eq!(res, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_admin(), current_admin);
+}
