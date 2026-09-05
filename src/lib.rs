@@ -985,6 +985,32 @@ impl NovaEventsContract {
             .ok_or(Error::NotInitialized)
     }
 
+    /// Rotates the admin key.
+    ///
+    /// What it does:
+    /// - Replaces the stored admin address with `new_admin`.
+    ///
+    /// Who may call:
+    /// - Only the current admin (`current_admin` must authorize the call and
+    ///   match the recorded admin).
+    ///
+    /// Errors:
+    /// - `NotInitialized` if the contract hasn't been initialized.
+    /// - `Unauthorized` if `current_admin` doesn't match the recorded admin.
+    pub fn set_admin(env: Env, current_admin: Address, new_admin: Address) -> Result<(), Error> {
+        current_admin.require_auth();
+        let stored_admin: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Admin)
+            .ok_or(Error::NotInitialized)?;
+        if current_admin != stored_admin {
+            return Err(Error::Unauthorized);
+        }
+        env.storage().instance().set(&DataKey::Admin, &new_admin);
+        Ok(())
+    }
+
     /// Returns the admin address configured during initialize.
     pub fn get_admin(env: Env) -> Result<Address, Error> {
         env.storage()

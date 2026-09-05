@@ -1275,6 +1275,36 @@ fn test_buy_tickets_happy_path_and_supply_check() {
     assert_eq!(client.get_tiers(&event_id).get(0).unwrap().tickets_sold, 4);
 }
 
+// ─── Admin Rotation Tests ────────────────────────────────────────────────────
+
+#[test]
+fn test_set_admin_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let admin = client.get_admin();
+    let new_admin = Address::generate(&env);
+
+    client.set_admin(&admin, &new_admin);
+    assert_eq!(client.get_admin(), new_admin);
+}
+
+#[test]
+fn test_set_admin_rejects_non_admin_caller() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let admin = client.get_admin();
+    let impostor = Address::generate(&env);
+    let new_admin = Address::generate(&env);
+
+    let res = client.try_set_admin(&impostor, &new_admin);
+    assert_eq!(res, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_admin(), admin);
+}
+
 // ─── Emergency Pause Tests ───────────────────────────────────────────────────
 
 #[test]
