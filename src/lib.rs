@@ -79,12 +79,14 @@ pub enum Error {
     InvalidRecipient = 26,
     /// Contract is currently paused by admin.
     ContractPaused = 27,
+    /// Event details can no longer be edited once any tier has sold a ticket.
+    EventDetailsLocked = 28,
     /// Resale max price must be a positive amount.
-    InvalidMaxResalePrice = 28,
+    InvalidMaxResalePrice = 29,
     /// Royalty basis points must be between 0 and 10_000.
-    InvalidRoyaltyBps = 29,
+    InvalidRoyaltyBps = 30,
     /// Resale price is not positive or exceeds the event's configured max resale price.
-    ResalePriceExceedsCap = 30,
+    ResalePriceExceedsCap = 31,
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -416,6 +418,76 @@ impl NovaEventsContract {
             .set(&DataKey::Sponsorships(event_id), &empty_s);
 
         Ok(event_id)
+    }
+
+    /// Organizer corrects an event's name, description, venue, or date after creation.
+    ///
+    /// What it does:
+    /// - Reuses `create_event`'s validation (non-empty strings, date not in the past).
+    /// - Blocked once any tier has sold at least one ticket, so details can't
+    ///   change out from under a buyer who already paid based on them.
+    ///
+    /// Who may call:
+    /// - Only the event's organizer.
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `Unauthorized`, `TiersNotFound`,
+    /// - `EventDetailsLocked` if any tier has `tickets_sold > 0`.
+    /// - `EmptyName`, `EmptyDescription`, `EmptyVenue`, `DateInPast`.
+    pub fn update_event_details(
+        env: Env,
+        organizer: Address,
+        event_id: u32,
+        name: String,
+        description: String,
+        venue: String,
+        date_unix: u64,
+    ) -> Result<(), Error> {
+        require_not_paused(&env)?;
+        organizer.require_auth();
+
+        let mut event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+        if event.organizer != organizer {
+            return Err(Error::Unauthorized);
+        }
+
+        let tiers: Vec<TicketTier> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Tiers(event_id))
+            .ok_or(Error::TiersNotFound)?;
+        for i in 0..tiers.len() {
+            if tiers.get(i).unwrap().tickets_sold > 0 {
+                return Err(Error::EventDetailsLocked);
+            }
+        }
+
+        if name.is_empty() {
+            return Err(Error::EmptyName);
+        }
+        if description.is_empty() {
+            return Err(Error::EmptyDescription);
+        }
+        if venue.is_empty() {
+            return Err(Error::EmptyVenue);
+        }
+        if date_unix < env.ledger().timestamp() {
+            return Err(Error::DateInPast);
+        }
+
+        event.name = name;
+        event.description = description;
+        event.venue = venue;
+        event.date_unix = date_unix;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        Ok(())
     }
 
     /// Buyer purchases multiple tickets in a given tier, transferring USDC to the contract.

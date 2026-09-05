@@ -350,6 +350,32 @@ export class NovaEventsClient {
   }
 
   /**
+   * Organizer corrects an event's name, description, venue, or date after
+   * creation. Reuses `create_event`'s validation, and is blocked once any
+   * tier has sold at least one ticket.
+   */
+  async update_event_details(
+    organizer: string,
+    event_id: number,
+    name: string,
+    description: string,
+    venue: string,
+    date_unix: bigint,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "update_event_details",
+      addressToScVal(organizer),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(name, { type: "string" }),
+      nativeToScVal(description, { type: "string" }),
+      nativeToScVal(venue, { type: "string" }),
+      nativeToScVal(date_unix, { type: "u64" })
+    );
+    await this.invoke(op, opts);
+  }
+
+  /**
    * Buyer purchases a ticket in a given tier.
    * Transfers `tier.price` USDC from buyer to the contract.
    * @returns The new ticket ID.
