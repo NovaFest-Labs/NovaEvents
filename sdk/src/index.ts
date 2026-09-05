@@ -87,6 +87,15 @@ export interface Payout {
   amount: bigint;
 }
 
+/**
+ * Per-event resale rules for paid ticket transfers.
+ * `royalty_bps` is in basis points (1 bp = 0.01%, 10_000 bp = 100%).
+ */
+export interface ResaleRules {
+  max_price: bigint;
+  royalty_bps: number;
+}
+
 // ─── XDR helpers ─────────────────────────────────────────────────────────────
 
 function addressToScVal(address: string): xdr.ScVal {
@@ -161,6 +170,14 @@ function scValToPayout(val: xdr.ScVal): Payout {
   return {
     recipient: (native["recipient"] as Address).toString(),
     amount: native["amount"] as bigint,
+  };
+}
+
+function scValToResaleRules(val: xdr.ScVal): ResaleRules {
+  const native = scValToNative(val) as Record<string, unknown>;
+  return {
+    max_price: native["max_price"] as bigint,
+    royalty_bps: native["royalty_bps"] as number,
   };
 }
 
@@ -437,6 +454,54 @@ export class NovaEventsClient {
   }
 
   /**
+   * Organizer sets (or replaces) the resale rules for an event: a maximum
+   * resale price and a royalty percentage (in basis points) taken from
+   * every paid resale via `resell_ticket`.
+   */
+  async set_resale_rules(
+    organizer: string,
+    event_id: number,
+    max_price: bigint,
+    royalty_bps: number,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "set_resale_rules",
+      addressToScVal(organizer),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(max_price, { type: "i128" }),
+      nativeToScVal(royalty_bps, { type: "u32" })
+    );
+    await this.invoke(op, opts);
+  }
+
+  /**
+   * Transfers ticket ownership from `from` to `to`, paid according to the
+   * event's resale rules. With no resale rules configured, this behaves
+   * exactly like `transfer_ticket` (a free reassignment) and `price` is
+   * ignored. With resale rules set, `price` must be positive and capped at
+   * the configured max price; both `from` and `to` must sign.
+   */
+  async resell_ticket(
+    from: string,
+    event_id: number,
+    ticket_id: number,
+    to: string,
+    price: bigint,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "resell_ticket",
+      addressToScVal(from),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(ticket_id, { type: "u32" }),
+      addressToScVal(to),
+      nativeToScVal(price, { type: "i128" })
+    );
+    await this.invoke(op, opts);
+  }
+
+  /**
    * Organizer disburses `amount` USDC from the event balance to `recipient`.
    * Only callable on an Ended event.
    */
@@ -554,6 +619,19 @@ export class NovaEventsClient {
     );
     const result = await this.query(op);
     return scValToNative(result) as bigint;
+  }
+
+  /** Returns the resale rules configured for an event, or null if none are set. */
+  async get_resale_rules(event_id: number): Promise<ResaleRules | null> {
+    const op = this.contract.call(
+      "get_resale_rules",
+      nativeToScVal(event_id, { type: "u32" })
+    );
+    const result = await this.query(op);
+    if (result.switch().name === "scvVoid") {
+      return null;
+    }
+    return scValToResaleRules(result);
   }
 
   /**

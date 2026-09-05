@@ -1026,6 +1026,162 @@ fn test_transfer_ticket_no_resale_rules() {
     assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
 }
 
+// ─── resell_ticket tests ──────────────────────────────────────────────────────
+
+#[test]
+fn test_resell_ticket_no_rules_is_free() {
+    // With no resale rules configured, resell_ticket behaves exactly like
+    // transfer_ticket: a free ownership reassignment, regardless of `price`.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    let token = soroban_sdk::token::Client::new(&env, &token_addr);
+    let buyer_balance_before = token.balance(&buyer);
+    let recipient_balance_before = token.balance(&recipient);
+
+    client.resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &20_000_000_i128);
+
+    assert_eq!(token.balance(&buyer), buyer_balance_before);
+    assert_eq!(token.balance(&recipient), recipient_balance_before);
+    assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
+}
+
+#[test]
+fn test_resell_ticket_within_cap_splits_royalty() {
+    // Resale within the configured cap must pay the seller (price - royalty)
+    // and route the royalty share straight to the organizer.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (token_addr, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+    token_admin.mint(&recipient, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0); // General tier: 1 USDC
+
+    // Max resale price 2 USDC, 10% royalty.
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
+
+    let token = soroban_sdk::token::Client::new(&env, &token_addr);
+    let seller_balance_before = token.balance(&buyer);
+    let organizer_balance_before = token.balance(&organizer);
+    let recipient_balance_before = token.balance(&recipient);
+
+    let resale_price = 20_000_000_i128; // exactly at cap
+    client.resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &resale_price);
+
+    let expected_royalty = 2_000_000_i128; // 10% of 20_000_000
+    let expected_seller_amount = resale_price - expected_royalty;
+
+    assert_eq!(
+        token.balance(&buyer),
+        seller_balance_before + expected_seller_amount
+    );
+    assert_eq!(
+        token.balance(&organizer),
+        organizer_balance_before + expected_royalty
+    );
+    assert_eq!(
+        token.balance(&recipient),
+        recipient_balance_before - resale_price
+    );
+    assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, recipient);
+}
+
+#[test]
+fn test_resell_ticket_above_cap_rejected() {
+    // A resale price above the configured max must be rejected outright.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+    token_admin.mint(&recipient, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
+
+    let result =
+        client.try_resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &20_000_001_i128);
+    assert_eq!(result, Err(Ok(Error::ResalePriceExceedsCap)));
+
+    // Ownership must be unchanged.
+    assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, buyer);
+}
+
+#[test]
+fn test_resell_ticket_zero_or_negative_price_rejected_when_rules_set() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let recipient = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
+
+    let result = client.try_resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &0_i128);
+    assert_eq!(result, Err(Ok(Error::ResalePriceExceedsCap)));
+}
+
+#[test]
+fn test_set_resale_rules_rejected_for_non_organizer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let stranger = Address::generate(&env);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let result = client.try_set_resale_rules(&stranger, &event_id, &20_000_000_i128, &1_000u32);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_set_resale_rules_validates_inputs() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let bad_price = client.try_set_resale_rules(&organizer, &event_id, &0_i128, &1_000u32);
+    assert_eq!(bad_price, Err(Ok(Error::InvalidMaxResalePrice)));
+
+    let bad_bps = client.try_set_resale_rules(&organizer, &event_id, &20_000_000_i128, &10_001u32);
+    assert_eq!(bad_bps, Err(Ok(Error::InvalidRoyaltyBps)));
+}
+
 // ─── Payout tests ─────────────────────────────────────────────────────────────
 
 /// Helper: create an event, sell a ticket to fund its balance, then end it.
