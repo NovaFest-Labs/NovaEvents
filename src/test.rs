@@ -1178,8 +1178,7 @@ fn test_set_resale_rules_validates_inputs() {
     let bad_price = client.try_set_resale_rules(&organizer, &event_id, &0_i128, &1_000u32);
     assert_eq!(bad_price, Err(Ok(Error::InvalidMaxResalePrice)));
 
-    let bad_bps =
-        client.try_set_resale_rules(&organizer, &event_id, &20_000_000_i128, &10_001u32);
+    let bad_bps = client.try_set_resale_rules(&organizer, &event_id, &20_000_000_i128, &10_001u32);
     assert_eq!(bad_bps, Err(Ok(Error::InvalidRoyaltyBps)));
 }
 
