@@ -562,6 +562,143 @@ fn test_create_event_with_past_date_rejected() {
     assert_eq!(result, Err(Ok(Error::DateInPast)));
 }
 
+// ─── update_event_details tests ───────────────────────────────────────────────
+
+#[test]
+fn test_update_event_details_happy_path() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    client.update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "Stellar Summit 2026"),
+        &String::from_str(&env, "Updated description"),
+        &String::from_str(&env, "New York"),
+        &1_800_000_000_u64,
+    );
+
+    let event = client.get_event(&event_id);
+    assert_eq!(event.name, String::from_str(&env, "Stellar Summit 2026"));
+    assert_eq!(
+        event.description,
+        String::from_str(&env, "Updated description")
+    );
+    assert_eq!(event.venue, String::from_str(&env, "New York"));
+    assert_eq!(event.date_unix, 1_800_000_000_u64);
+}
+
+#[test]
+fn test_update_event_details_rejected_for_non_organizer() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let impostor = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let result = client.try_update_event_details(
+        &impostor,
+        &event_id,
+        &String::from_str(&env, "Hijacked"),
+        &String::from_str(&env, "desc"),
+        &String::from_str(&env, "venue"),
+        &1_800_000_000_u64,
+    );
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+
+    // Event must be unchanged.
+    let event = client.get_event(&event_id);
+    assert_eq!(event.name, String::from_str(&env, "Stellar Summit"));
+}
+
+#[test]
+fn test_update_event_details_reuses_create_event_validation() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    env.ledger().with_mut(|li| li.timestamp = 2_000_000_000);
+
+    let empty_name = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "desc"),
+        &String::from_str(&env, "venue"),
+        &2_500_000_000_u64,
+    );
+    assert_eq!(empty_name, Err(Ok(Error::EmptyName)));
+
+    let empty_description = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "name"),
+        &String::from_str(&env, ""),
+        &String::from_str(&env, "venue"),
+        &2_500_000_000_u64,
+    );
+    assert_eq!(empty_description, Err(Ok(Error::EmptyDescription)));
+
+    let empty_venue = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "name"),
+        &String::from_str(&env, "desc"),
+        &String::from_str(&env, ""),
+        &2_500_000_000_u64,
+    );
+    assert_eq!(empty_venue, Err(Ok(Error::EmptyVenue)));
+
+    let past_date = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "name"),
+        &String::from_str(&env, "desc"),
+        &String::from_str(&env, "venue"),
+        &1_000_000_000_u64, // before the ledger's current timestamp
+    );
+    assert_eq!(past_date, Err(Ok(Error::DateInPast)));
+}
+
+#[test]
+fn test_update_event_details_locked_once_tickets_sold() {
+    // Once any tier has sold a ticket, details are locked so buyers can't be
+    // surprised by a change to the thing they already paid for.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    client.buy_ticket(&buyer, &event_id, &0);
+
+    let result = client.try_update_event_details(
+        &organizer,
+        &event_id,
+        &String::from_str(&env, "Renamed"),
+        &String::from_str(&env, "desc"),
+        &String::from_str(&env, "venue"),
+        &1_800_000_000_u64,
+    );
+    assert_eq!(result, Err(Ok(Error::EventDetailsLocked)));
+
+    // Event must be unchanged.
+    let event = client.get_event(&event_id);
+    assert_eq!(event.name, String::from_str(&env, "Stellar Summit"));
+}
+
 #[test]
 fn test_create_event_with_empty_name_rejected() {
     let env = Env::default();
