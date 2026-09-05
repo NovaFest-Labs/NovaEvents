@@ -79,6 +79,12 @@ pub enum Error {
     InvalidRecipient = 26,
     /// Contract is currently paused by admin.
     ContractPaused = 27,
+    /// Resale max price must be a positive amount.
+    InvalidMaxResalePrice = 28,
+    /// Royalty basis points must be between 0 and 10_000.
+    InvalidRoyaltyBps = 29,
+    /// Resale price is not positive or exceeds the event's configured max resale price.
+    ResalePriceExceedsCap = 30,
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -153,6 +159,16 @@ pub struct Payout {
     pub amount: i128,
 }
 
+/// Per-event resale rules for paid ticket transfers.
+/// When set, `resell_ticket` caps the resale price at `max_price` and routes
+/// `royalty_bps` (basis points, 1 bp = 0.01%) of the price to the organizer.
+#[contracttype]
+#[derive(Clone)]
+pub struct ResaleRules {
+    pub max_price: i128,
+    pub royalty_bps: u32,
+}
+
 /// Aggregated financial view of an event, so an auditor can confirm in one call
 /// that every unit collected is still held or accounted for as a disbursement.
 ///
@@ -187,6 +203,7 @@ pub enum DataKey {
     Payouts(u32),
     OrganizerEvents(Address),
     Paused,
+    ResaleRules(u32),
 }
 
 fn require_not_paused(env: &Env) -> Result<(), Error> {
@@ -722,6 +739,160 @@ impl NovaEventsContract {
         // A redeemed ticket cannot change hands.
         if ticket.redeemed {
             return Err(Error::AlreadyRedeemed);
+        }
+
+        ticket.owner = to;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Ticket(event_id, ticket_id), &ticket);
+
+        Ok(())
+    }
+
+    /// Organizer sets (or replaces) the resale rules for an event: a maximum
+    /// resale price and a royalty percentage taken from every paid resale
+    /// via `resell_ticket`.
+    ///
+    /// Who may call:
+    /// - Only the event's organizer.
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `Unauthorized`,
+    /// - `InvalidMaxResalePrice` if `max_price` is not positive.
+    /// - `InvalidRoyaltyBps` if `royalty_bps` exceeds 10_000 (100%).
+    pub fn set_resale_rules(
+        env: Env,
+        organizer: Address,
+        event_id: u32,
+        max_price: i128,
+        royalty_bps: u32,
+    ) -> Result<(), Error> {
+        require_not_paused(&env)?;
+        organizer.require_auth();
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+        if event.organizer != organizer {
+            return Err(Error::Unauthorized);
+        }
+        if max_price <= 0 {
+            return Err(Error::InvalidMaxResalePrice);
+        }
+        if royalty_bps > 10_000 {
+            return Err(Error::InvalidRoyaltyBps);
+        }
+
+        env.storage().persistent().set(
+            &DataKey::ResaleRules(event_id),
+            &ResaleRules {
+                max_price,
+                royalty_bps,
+            },
+        );
+        Ok(())
+    }
+
+    /// Returns the resale rules configured for `event_id`, if any.
+    pub fn get_resale_rules(env: Env, event_id: u32) -> Option<ResaleRules> {
+        env.storage()
+            .persistent()
+            .get(&DataKey::ResaleRules(event_id))
+    }
+
+    /// Transfers ticket ownership from `from` to `to`, paid according to the
+    /// event's resale rules.
+    ///
+    /// - If the event has no resale rules configured, this behaves exactly
+    ///   like `transfer_ticket`: a free ownership reassignment, no USDC moves.
+    /// - If resale rules are set, `price` must be positive and no greater
+    ///   than the configured max price. USDC is transferred from `to` to
+    ///   `from`, minus a royalty (`royalty_bps` of `price`) which is routed
+    ///   directly to the organizer.
+    ///
+    /// Rules enforced (shared with `transfer_ticket`):
+    /// - `from` must be the current ticket owner and must authorize the call.
+    /// - The event must not be `Cancelled` or `Ended`.
+    /// - The ticket must not have been redeemed already.
+    /// - `to` must differ from `from`.
+    /// - When resale rules are set, `to` must also authorize the call, since
+    ///   their USDC is what moves.
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `TicketNotFound`, `EventNotActive`,
+    /// - `NotOwner`, `InvalidRecipient`, `AlreadyRedeemed`,
+    /// - `ResalePriceExceedsCap` if resale rules are set and `price` is not
+    ///   positive or exceeds the configured max price.
+    pub fn resell_ticket(
+        env: Env,
+        from: Address,
+        event_id: u32,
+        ticket_id: u32,
+        to: Address,
+        price: i128,
+    ) -> Result<(), Error> {
+        require_not_paused(&env)?;
+        from.require_auth();
+
+        let event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+
+        if event.status == EventStatus::Cancelled || event.status == EventStatus::Ended {
+            return Err(Error::EventNotActive);
+        }
+
+        let mut ticket: Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(event_id, ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+
+        if ticket.owner != from {
+            return Err(Error::NotOwner);
+        }
+        if to == from {
+            return Err(Error::InvalidRecipient);
+        }
+        if ticket.redeemed {
+            return Err(Error::AlreadyRedeemed);
+        }
+
+        let rules: Option<ResaleRules> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ResaleRules(event_id));
+
+        if let Some(rules) = rules {
+            if price <= 0 || price > rules.max_price {
+                return Err(Error::ResalePriceExceedsCap);
+            }
+
+            // The buyer's USDC is moving, so the buyer must authorize this
+            // call too, not just the seller (`from`).
+            to.require_auth();
+
+            let royalty = price
+                .checked_mul(i128::from(rules.royalty_bps))
+                .ok_or(Error::InvalidAmount)?
+                / 10_000;
+            let seller_amount = price - royalty;
+
+            let token_addr: Address = env
+                .storage()
+                .instance()
+                .get(&DataKey::Token)
+                .ok_or(Error::NotInitialized)?;
+            let token_client = TokenClient::new(&env, &token_addr);
+
+            token_client.transfer(&to, &from, &seller_amount);
+            if royalty > 0 {
+                token_client.transfer(&to, &event.organizer, &royalty);
+            }
         }
 
         ticket.owner = to;
