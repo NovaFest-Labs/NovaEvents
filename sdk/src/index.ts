@@ -81,6 +81,12 @@ export interface Sponsorship {
   amount: bigint;
 }
 
+/** A record of a single payout disbursed from an event's balance. */
+export interface Payout {
+  recipient: string;
+  amount: bigint;
+}
+
 // ─── XDR helpers ─────────────────────────────────────────────────────────────
 
 function addressToScVal(address: string): xdr.ScVal {
@@ -146,6 +152,14 @@ function scValToSponsorship(val: xdr.ScVal): Sponsorship {
   const native = scValToNative(val) as Record<string, unknown>;
   return {
     sponsor: (native["sponsor"] as Address).toString(),
+    amount: native["amount"] as bigint,
+  };
+}
+
+function scValToPayout(val: xdr.ScVal): Payout {
+  const native = scValToNative(val) as Record<string, unknown>;
+  return {
+    recipient: (native["recipient"] as Address).toString(),
     amount: native["amount"] as bigint,
   };
 }
@@ -376,6 +390,47 @@ export class NovaEventsClient {
     await this.invoke(op, opts);
   }
 
+  /**
+   * Transfers ticket ownership from the current owner to a new address.
+   */
+  async transfer_ticket(
+    from: string,
+    event_id: number,
+    ticket_id: number,
+    to: string,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "transfer_ticket",
+      addressToScVal(from),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(ticket_id, { type: "u32" }),
+      addressToScVal(to)
+    );
+    await this.invoke(op, opts);
+  }
+
+  /**
+   * Organizer disburses `amount` USDC from the event balance to `recipient`.
+   * Only callable on an Ended event.
+   */
+  async payout(
+    organizer: string,
+    event_id: number,
+    recipient: string,
+    amount: bigint,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "payout",
+      addressToScVal(organizer),
+      nativeToScVal(event_id, { type: "u32" }),
+      addressToScVal(recipient),
+      nativeToScVal(amount, { type: "i128" })
+    );
+    await this.invoke(op, opts);
+  }
+
   // ─── Read-only queries ─────────────────────────────────────────────────────
 
   /** Fetch full event details by ID. */
@@ -443,6 +498,24 @@ export class NovaEventsClient {
     const op = this.contract.call("get_token");
     const result = await this.query(op);
     return Address.fromScVal(result).toString();
+  }
+
+  /** Returns the admin address configured during initialize. */
+  async get_admin(): Promise<string> {
+    const op = this.contract.call("get_admin");
+    const result = await this.query(op);
+    return Address.fromScVal(result).toString();
+  }
+
+  /** Fetch every payout disbursed for an event. */
+  async get_payouts(event_id: number): Promise<Payout[]> {
+    const op = this.contract.call(
+      "get_payouts",
+      nativeToScVal(event_id, { type: "u32" })
+    );
+    const result = await this.query(op);
+    const vec = result.vec() ?? [];
+    return vec.map(scValToPayout);
   }
 
   /**
