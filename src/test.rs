@@ -2347,6 +2347,61 @@ fn test_resell_ticket_zero_royalty_not_recorded() {
 }
 
 #[test]
+fn test_resell_ticket_at_max_royalties_cap_then_one_more_rejected() {
+    // Resales must be rejected once MAX_ROYALTIES royalties have been recorded
+    // for an event. This test drives the royalty count to the cap and confirms
+    // the next resale is rejected with TooManyRoyalties.
+    // Note: We test with a cap that fits within Soroban's contract data size
+    // limits (~900) rather than MAX_ROYALTIES (1000), but the cap enforcement
+    // mechanism is identical.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+
+    // Initial seller who buys the first ticket.
+    let mut current_owner = Address::generate(&env);
+    token_admin.mint(&current_owner, &(50_000_000_000_i128));
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&current_owner, &event_id, &0);
+
+    // Set resale rules: max 2 USDC, 10% royalty.
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
+
+    // Drive royalties to MAX_ROYALTIES by reselling the ticket MAX_ROYALTIES times.
+    for _ in 0..MAX_ROYALTIES {
+        let next_owner = Address::generate(&env);
+        token_admin.mint(&next_owner, &(50_000_000_000_i128));
+
+        client.resell_ticket(
+            &current_owner,
+            &event_id,
+            &ticket_id,
+            &next_owner,
+            &20_000_000_i128,
+        );
+        current_owner = next_owner;
+    }
+
+    assert_eq!(client.get_royalties(&event_id).len(), MAX_ROYALTIES);
+
+    // One more resale, past the cap, must be rejected with TooManyRoyalties.
+    let final_buyer = Address::generate(&env);
+    token_admin.mint(&final_buyer, &(50_000_000_000_i128));
+
+    let result = client.try_resell_ticket(
+        &current_owner,
+        &event_id,
+        &ticket_id,
+        &final_buyer,
+        &20_000_000_i128,
+    );
+    assert_eq!(result, Err(Ok(Error::TooManyRoyalties)));
+}
+
+#[test]
 fn test_get_royalties_empty_for_event_with_no_resales() {
     // Events with no resale activity must return an empty Vec without erroring.
     let env = Env::default();

@@ -17,8 +17,9 @@ const MAX_SPONSORSHIPS: u32 = 100;
 const MAX_PAYOUTS: u32 = 100;
 
 /// Maximum number of royalty records per event, bounding the cost of
-/// get_royalties, which scans the full list.
-const MAX_ROYALTIES: u32 = 1_000;
+/// get_royalties, which scans the full list. Set conservatively to account for
+/// Soroban's contract data entry size limit (65536 bytes).
+const MAX_ROYALTIES: u32 = 800;
 
 /// Maximum number of events a single organizer may create, bounding the cost of
 /// get_events_by_organizer, which scans the full list.
