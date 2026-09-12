@@ -317,6 +317,30 @@ fn test_sponsor_event_blocked_after_end_event() {
 }
 
 #[test]
+fn test_sponsor_event_zero_or_negative_amount_rejected() {
+    // Issue #68: sponsor_event must reject zero and negative amounts with
+    // InvalidAmount before touching event state or moving tokens.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let zero = client.try_sponsor_event(&sponsor, &event_id, &0_i128);
+    assert_eq!(zero, Err(Ok(Error::InvalidAmount)));
+
+    let negative = client.try_sponsor_event(&sponsor, &event_id, &-1_i128);
+    assert_eq!(negative, Err(Ok(Error::InvalidAmount)));
+
+    // Nothing must have been recorded and no balance change.
+    assert_eq!(client.get_sponsorships(&event_id).len(), 0);
+    assert_eq!(client.get_balance(&event_id), 0);
+}
+
+#[test]
 fn test_sponsorship_is_publicly_recorded() {
     let env = Env::default();
     env.mock_all_auths();
