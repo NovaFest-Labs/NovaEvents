@@ -1565,6 +1565,29 @@ fn test_payout_fails_when_amount_exceeds_balance() {
 }
 
 #[test]
+fn test_payout_zero_or_negative_amount_rejected() {
+    // Issue #69: payout must reject zero and negative amounts with InvalidAmount
+    // before any disbursement is recorded or tokens move.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let recipient = Address::generate(&env);
+
+    let (event_id, organizer) = setup_ended_event(&env, &client, &token_admin);
+
+    let zero = client.try_payout(&organizer, &event_id, &recipient, &0_i128);
+    assert_eq!(zero, Err(Ok(Error::InvalidAmount)));
+
+    let negative = client.try_payout(&organizer, &event_id, &recipient, &-1_i128);
+    assert_eq!(negative, Err(Ok(Error::InvalidAmount)));
+
+    // Nothing must have been disbursed and the balance must be untouched.
+    assert_eq!(client.get_payouts(&event_id).len(), 0);
+    assert_eq!(client.get_balance(&event_id), 10_000_000_i128);
+}
+
+#[test]
 fn test_payout_fails_on_active_event() {
     let env = Env::default();
     env.mock_all_auths();
