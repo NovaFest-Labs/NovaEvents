@@ -100,7 +100,6 @@ reports against the token contract's own view of what it holds.
 | `--network <local\|testnet>` | Target network. Default `local`. |
 | `--skip-build` | Reuse the existing WASM instead of rebuilding. |
 | `--keep-sandbox` | Leave the local container running after the run. |
-| `--require-end-event` | Fail, rather than skip, if `end_event` is missing. |
 
 The script generates and funds four throwaway accounts (organizer, attendee,
 sponsor, worker) and removes them on exit. It settles in the native Stellar Asset
@@ -112,11 +111,10 @@ identical either way.
 entrypoint's signature. It is deliberately not part of CI: it needs either Docker
 or live network access, and it submits real transactions.
 
-`end_event` is still open ([#1](https://github.com/NovaFest-Labs/NovaEvents/issues/1)).
-Until it lands the script detects its absence from the deployed contract's spec,
-asserts that `payout` correctly rejects with `EventNotEnded`, and reports that
-stage as skipped. No edit is needed once `end_event` ships — the stage activates
-on its own.
+The script exercises the full lifecycle, including `end_event -> payout`:
+after ending the event it confirms ticket sales and sponsorships are locked,
+then disburses a payout and verifies the recipient actually received the
+funds.
 
 ## Making a contribution
 
