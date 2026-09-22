@@ -230,18 +230,31 @@ pub struct EventSummary {
 
 #[contracttype]
 pub enum DataKey {
+    /// The admin address configured during `initialize`.
     Admin,
+    /// The USDC token contract address configured during `initialize`.
     Token,
+    /// Monotonic counter used to assign the next event's ID.
     EventCounter,
+    /// The `Event` struct for a given event ID.
     Event(u32),
+    /// The `Vec<TicketTier>` for a given event ID.
     Tiers(u32),
+    /// Monotonic counter used to assign the next ticket ID, per event.
     TicketCounter(u32),
+    /// The `Ticket` struct for a given (event ID, ticket ID) pair.
     Ticket(u32, u32),
+    /// The `Vec<Sponsorship>` recorded for a given event ID.
     Sponsorships(u32),
+    /// The `Vec<Payout>` disbursed for a given event ID.
     Payouts(u32),
+    /// The list of event IDs created by a given organizer address.
     OrganizerEvents(Address),
+    /// Whether the contract is currently in an emergency-halted state.
     Paused,
+    /// The `ResaleRules` configured for a given event ID, if any.
     ResaleRules(u32),
+    /// The `Vec<Royalty>` recorded for a given event ID.
     Royalties(u32),
 }
 
