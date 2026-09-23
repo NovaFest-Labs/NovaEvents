@@ -137,6 +137,7 @@ pub enum EventStatus {
 #[contracttype]
 #[derive(Clone)]
 pub struct Event {
+    /// The address that created the event and controls its lifecycle.
     pub organizer: Address,
     pub name: String,
     pub description: String,
@@ -147,6 +148,7 @@ pub struct Event {
     pub funding_goal: i128,
     /// Current USDC balance held by the contract for this event.
     pub balance: i128,
+    /// Active, Ended, or Cancelled — see `EventStatus`.
     pub status: EventStatus,
 }
 
@@ -154,9 +156,13 @@ pub struct Event {
 #[contracttype]
 #[derive(Clone)]
 pub struct Ticket {
+    /// The event this ticket belongs to.
     pub event_id: u32,
+    /// Index into the event's tier list this ticket was bought/assigned in.
     pub tier_index: u32,
+    /// The current owner's address.
     pub owner: Address,
+    /// Whether the ticket has already been checked in at the door.
     pub redeemed: bool,
 }
 
@@ -164,7 +170,9 @@ pub struct Ticket {
 #[contracttype]
 #[derive(Clone)]
 pub struct Sponsorship {
+    /// The address that made the contribution.
     pub sponsor: Address,
+    /// Amount contributed, in USDC stroops.
     pub amount: i128,
 }
 
@@ -172,7 +180,9 @@ pub struct Sponsorship {
 #[contracttype]
 #[derive(Clone)]
 pub struct Payout {
+    /// The address the funds were sent to.
     pub recipient: Address,
+    /// Amount disbursed, in USDC stroops.
     pub amount: i128,
 }
 
@@ -193,7 +203,9 @@ pub struct Royalty {
 #[contracttype]
 #[derive(Clone)]
 pub struct ResaleRules {
+    /// The highest price a resale may be listed at, in USDC stroops.
     pub max_price: i128,
+    /// Share of the resale price routed to the organizer, in basis points.
     pub royalty_bps: u32,
 }
 
