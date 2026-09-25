@@ -129,8 +129,11 @@ pub struct TicketTier {
 #[contracttype]
 #[derive(Clone, PartialEq, Debug)]
 pub enum EventStatus {
+    /// Open for ticket sales and sponsorships.
     Active,
+    /// Closed by the organizer via `end_event`; the prerequisite for `payout`.
     Ended,
+    /// Cancelled by the organizer via `cancel_event`; all funds refunded.
     Cancelled,
 }
 
