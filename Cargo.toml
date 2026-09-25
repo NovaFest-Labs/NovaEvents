@@ -3,6 +3,8 @@ name = "nova-events"
 version = "0.1.0"
 edition = "2021"
 publish = false
+description = "Transparent event management on Stellar — sponsorship funding, multi-tier ticketing, and on-chain payouts, settled in USDC."
+repository = "https://github.com/MOYIN-21/NovaEvents"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
