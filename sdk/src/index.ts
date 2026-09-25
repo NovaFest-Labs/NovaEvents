@@ -315,13 +315,25 @@ export class NovaEventsClient {
       );
     }
 
-    // Poll until confirmed
+    // Poll until confirmed. Bounded to roughly the transaction's own
+    // validity window (setTimeout(30) above) so a stuck RPC node or a
+    // transaction that never gets included can't hang the caller forever.
+    const maxAttempts = 30;
+    let attempts = 0;
     let getResult = await this.server.getTransaction(sendResult.hash);
     while (
-      getResult.status === rpc.Api.GetTransactionStatus.NOT_FOUND
+      getResult.status === rpc.Api.GetTransactionStatus.NOT_FOUND &&
+      attempts < maxAttempts
     ) {
       await new Promise((r) => setTimeout(r, 1000));
       getResult = await this.server.getTransaction(sendResult.hash);
+      attempts++;
+    }
+
+    if (getResult.status === rpc.Api.GetTransactionStatus.NOT_FOUND) {
+      throw new Error(
+        `Transaction ${sendResult.hash} was not confirmed after ${maxAttempts} seconds`
+      );
     }
 
     if (getResult.status === rpc.Api.GetTransactionStatus.FAILED) {
