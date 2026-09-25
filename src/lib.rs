@@ -447,16 +447,6 @@ impl NovaEventsContract {
 
         let organizer_clone = organizer.clone();
 
-        // Enforce per-organizer event cap before touching any storage.
-        let organizer_events_preview: Vec<u32> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::OrganizerEvents(organizer_clone.clone()))
-            .unwrap_or_else(|| Vec::new(&env));
-        if organizer_events_preview.len() >= MAX_EVENTS_PER_ORGANIZER {
-            return Err(Error::TooManyEvents);
-        }
-
         env.storage().persistent().set(
             &DataKey::Event(event_id),
             &Event {
