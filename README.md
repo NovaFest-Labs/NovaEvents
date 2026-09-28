@@ -56,25 +56,26 @@ The platform is built around a Soroban smart contract (Rust) that holds event st
 
 This repository is built and contributed to in stages. The **core** is implemented first and deployed to Stellar testnet; the remaining features are tracked as open issues for contributors.
 
-### Core (implemented + deployed to testnet)
+### Implemented
 
-- Event creation with funding goal and one or more ticket tiers
+- Event creation with funding goal and one or more ticket tiers, and editing an event's details until its first ticket sells
 - Ticket purchase in USDC, settled on-chain, producing an ownership record
 - Check-in / redeem (organizer marks a ticket as used)
-- Sponsorship contributions in USDC, recorded publicly per sponsor
-- Read access to event state, sponsorships, and ticket records
+- Sponsorship contributions in USDC, recorded publicly per sponsor, with a per-sponsor share (in basis points) readable on-chain
+- Event lifecycle controls: ending an event, and cancelling one with automatic refunds to ticket holders and sponsors
+- Organizer-triggered payouts to recipients (e.g. workers) after an event ends, recorded on-chain alongside the funds collected
+- Ticket transfer, plus per-event resale rules (price cap and organizer royalty)
+- An aggregated financial summary per event, so an auditor can verify collected vs. paid-out funds in one call
+- Emergency pause / unpause controls for the contract admin
+- Read access to event state, sponsorships, payouts, royalties, and ticket records
+- A TypeScript SDK for the contract, in [`sdk/`](./sdk)
+
+The rest of the platform lives in companion repositories: a web frontend with QR-code-based check-in ([NovaEvents-app](https://github.com/NovaFest-Labs/NovaEvents-app)) and an off-chain API for indexing, notifications, and media ([NovaEvents-api](https://github.com/NovaFest-Labs/NovaEvents-api)).
 
 ### Planned (open for contribution)
 
-These are intentionally scoped as contributor issues:
-
-- Proportional revenue shares for sponsors based on contribution size
-- Automated payroll distribution to workers after an event concludes
-- Ticket transfer and resale rules (price caps, organizer royalties)
-- QR-code-based check-in flow
-- A web frontend (organizer dashboard, sponsor view, attendee ticket wallet)
-- Event lifecycle controls (cancel event, refund logic)
-- TypeScript bindings / SDK for the contract
+- Distributing revenue back to sponsors in proportion to their share (today the share is calculable and auditable on-chain, but nothing pays it out automatically)
+- Automated or batched payroll distribution to workers (today each payout is a separate, organizer-triggered transaction)
 
 If you're a contributor looking for where to start, check the **Issues** tab — each issue is scoped with clear acceptance criteria.
 
