@@ -156,6 +156,13 @@ Options:
 
 **Testnet contract ID:** `CABTSQOXHOOAFFWBPDIXAPAL7KKV76WFL3WLGBUH6SLJ7R2BO5YNWKFU`
 
+> ⚠️ This is an early deployment and is missing most entrypoints added since
+> (`pause`/`unpause`, `end_event`, `cancel_event`, `payout`,
+> `update_event_details`, `transfer_ticket`, resale rules, and more — run
+> `stellar contract info interface --id <id> --network testnet` to see what
+> it actually exposes). Deploy your own with `./scripts/deploy-testnet.sh`
+> above to test anything beyond the original core flow.
+
 **Testnet USDC token:** `CAUJTFVKA5WCN4ZPUDBRDAS3DT5HVKNQTLFT32KDAFVGJRTB7VPRVNRT`
 
 ## Contributing

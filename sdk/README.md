@@ -1,8 +1,13 @@
 # NovaEvents SDK
 
-TypeScript bindings for the [NovaEvents](https://github.com/CmxTop/NovaEvents) Soroban smart contract on Stellar.
+TypeScript bindings for the [NovaEvents](https://github.com/NovaFest-Labs/NovaEvents) Soroban smart contract on Stellar.
 
 **Contract ID (testnet):** `CABTSQOXHOOAFFWBPDIXAPAL7KKV76WFL3WLGBUH6SLJ7R2BO5YNWKFU`
+
+> ⚠️ This is an early deployment missing most entrypoints added since
+> (`pause`/`unpause`, `end_event`, `cancel_event`, `payout`, and more — see
+> the main repo's README). Deploy your own with
+> `scripts/deploy-testnet.sh` to exercise the full current API.
 
 > **Decision:** The SDK lives at `sdk/` inside the main repo. This keeps the contract source and its bindings together, simplifying versioning and making it easy for contributors to update types when the contract ABI changes.
 
