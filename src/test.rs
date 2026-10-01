@@ -2667,3 +2667,51 @@ fn test_redeem_ticket_nonexistent_event_returns_event_not_found() {
     let result = client.try_redeem_ticket(&organizer, &99, &0);
     assert_eq!(result, Err(Ok(Error::EventNotFound)));
 }
+
+// ─── Issue #68: sponsor_event rejects zero and negative amounts ───────────────
+
+#[test]
+fn test_sponsor_event_rejects_zero_amount() {
+    // sponsor_event validates that amount is positive (InvalidAmount at
+    // src/lib.rs). This test confirms that a zero amount is rejected.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    token_admin.mint(&sponsor, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let result = client.try_sponsor_event(&sponsor, &event_id, &0_i128);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+
+    // Event balance must be unchanged.
+    assert_eq!(client.get_balance(&event_id), 0);
+    // No sponsorship record must have been created.
+    assert_eq!(client.get_sponsorships(&event_id).len(), 0);
+}
+
+#[test]
+fn test_sponsor_event_rejects_negative_amount() {
+    // sponsor_event validates that amount is positive (InvalidAmount at
+    // src/lib.rs). This test confirms that a negative amount is rejected.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    token_admin.mint(&sponsor, &100_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    let result = client.try_sponsor_event(&sponsor, &event_id, &-1_i128);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+
+    // Event balance must be unchanged.
+    assert_eq!(client.get_balance(&event_id), 0);
+    // No sponsorship record must have been created.
+    assert_eq!(client.get_sponsorships(&event_id).len(), 0);
+}
