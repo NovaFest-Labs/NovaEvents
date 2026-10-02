@@ -2446,9 +2446,8 @@ fn test_resell_ticket_at_max_royalties_cap_then_one_more_rejected() {
     // Resales must be rejected once MAX_ROYALTIES royalties have been recorded
     // for an event. This test drives the royalty count to the cap and confirms
     // the next resale is rejected with TooManyRoyalties.
-    // Note: We test with a cap that fits within Soroban's contract data size
-    // limits (~900) rather than MAX_ROYALTIES (1000), but the cap enforcement
-    // mechanism is identical.
+    // Note: MAX_ROYALTIES is 800, chosen to fit within Soroban's contract
+    // data size limits rather than some larger round number.
     let env = Env::default();
     env.mock_all_auths();
 
@@ -2494,6 +2493,15 @@ fn test_resell_ticket_at_max_royalties_cap_then_one_more_rejected() {
         &20_000_000_i128,
     );
     assert_eq!(result, Err(Ok(Error::TooManyRoyalties)));
+
+    // resell_ticket writes the new owner before checking the royalty cap, so
+    // this only stays correct because Soroban rolls back every storage write
+    // from an invocation that returns Err. Pin that: the rejected resale
+    // above must not have left the ticket with `final_buyer` as its owner.
+    assert_eq!(
+        client.get_ticket(&event_id, &ticket_id).owner,
+        current_owner
+    );
 }
 
 #[test]
