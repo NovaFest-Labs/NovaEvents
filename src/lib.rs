@@ -110,9 +110,11 @@ pub enum Error {
 #[contracttype]
 #[derive(Clone)]
 pub struct TierInput {
+    /// Display name of the tier (e.g. "VIP", "General Admission").
     pub name: String,
     /// Price in USDC stroops (1 USDC = 10_000_000).
     pub price: i128,
+    /// Maximum number of tickets that can be sold for this tier.
     pub supply_cap: u32,
 }
 
