@@ -252,6 +252,51 @@ fn test_redeem_ticket() {
 }
 
 #[test]
+fn test_redeem_ticket_rejected_on_cancelled_event() {
+    // cancel_event already refunded this ticket's buyer, so redeeming it
+    // afterwards would mark a refunded ticket as checked in.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+    client.cancel_event(&organizer, &event_id);
+
+    let result = client.try_redeem_ticket(&organizer, &event_id, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::EventNotActive)));
+
+    // Must not be marked redeemed after a rejected check-in.
+    assert!(!client.get_ticket(&event_id, &ticket_id).redeemed);
+}
+
+#[test]
+fn test_redeem_ticket_rejected_on_ended_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+
+    token_admin.mint(&buyer, &50_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+    client.end_event(&organizer, &event_id);
+
+    let result = client.try_redeem_ticket(&organizer, &event_id, &ticket_id);
+    assert_eq!(result, Err(Ok(Error::EventNotActive)));
+
+    assert!(!client.get_ticket(&event_id, &ticket_id).redeemed);
+}
+
+#[test]
 fn test_end_event_changes_status_to_ended() {
     let env = Env::default();
     env.mock_all_auths();

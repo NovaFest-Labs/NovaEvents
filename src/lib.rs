@@ -723,7 +723,9 @@ impl NovaEventsContract {
     ///
     /// Errors:
     /// - `ContractPaused`, `NotInitialized` (if event missing/other storage issues),
-    /// - `EventNotFound`, `Unauthorized`, `TicketNotFound`, `AlreadyRedeemed`.
+    /// - `EventNotFound`, `Unauthorized`, `EventNotActive` (event is `Cancelled`
+    ///   or `Ended` — a cancelled event's tickets were already refunded, and an
+    ///   ended one is past check-in), `TicketNotFound`, `AlreadyRedeemed`.
     pub fn redeem_ticket(
         env: Env,
         organizer: Address,
@@ -740,6 +742,9 @@ impl NovaEventsContract {
             .ok_or(Error::EventNotFound)?;
         if event.organizer != organizer {
             return Err(Error::Unauthorized);
+        }
+        if event.status != EventStatus::Active {
+            return Err(Error::EventNotActive);
         }
 
         let mut ticket: Ticket = env
