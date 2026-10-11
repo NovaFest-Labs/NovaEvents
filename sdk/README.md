@@ -111,6 +111,7 @@ new NovaEventsClient(opts?: {
 | `create_event(organizer, name, description, venue, date_unix, funding_goal, tiers, opts)` → `number` | Create a new event; returns event ID |
 | `update_event_details(organizer, event_id, name, description, venue, date_unix, opts)` | Correct an event's details before any tier has sold a ticket |
 | `buy_ticket(buyer, event_id, tier_index, opts)` → `number` | Purchase a ticket; returns ticket ID |
+| `buy_tickets(buyer, event_id, tier_index, quantity, opts)` → `number[]` | Purchase several tickets in one tier in a single transaction; returns the ticket IDs |
 | `redeem_ticket(organizer, event_id, ticket_id, opts)` | Mark a ticket as redeemed |
 | `end_event(organizer, event_id, opts)` | Close an event, transitioning it from Active to Ended |
 | `cancel_event(organizer, event_id, opts)` | Cancel an Active event, refunding tickets and sponsorships |
@@ -120,6 +121,7 @@ new NovaEventsClient(opts?: {
 | `resell_ticket(from, event_id, ticket_id, to, price, opts)` | Transfer a ticket, paid according to the event's resale rules |
 | `pause(admin, opts)` | Halt all state-changing contract functions in an emergency |
 | `unpause(admin, opts)` | Resume normal operations after an emergency pause |
+| `set_admin(current_admin, new_admin, opts)` | Rotate the admin role (takes effect immediately) |
 | `payout(organizer, event_id, recipient, amount, opts)` | Disburse USDC from an Ended event's balance |
 
 ### Read-only methods
@@ -130,6 +132,7 @@ new NovaEventsClient(opts?: {
 | `get_tiers(event_id)` | `TicketTier[]` | All ticket tiers for an event |
 | `get_ticket(event_id, ticket_id)` | `Ticket` | Specific ticket details |
 | `get_sponsorships(event_id)` | `Sponsorship[]` | All sponsorships for an event |
+| `get_events_by_organizer(organizer)` | `number[]` | IDs of every event created by an organizer |
 | `event_count()` | `number` | Total number of events |
 | `ticket_count(event_id)` | `number` | Tickets sold for an event |
 | `get_token()` | `string` | Configured USDC token contract address |

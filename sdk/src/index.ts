@@ -461,6 +461,29 @@ export class NovaEventsClient {
   }
 
   /**
+   * Buyer purchases `quantity` tickets in one tier in a single transaction.
+   * Transfers `tier.price * quantity` USDC from buyer to the contract.
+   * @returns The new ticket IDs, in order.
+   */
+  async buy_tickets(
+    buyer: string,
+    event_id: number,
+    tier_index: number,
+    quantity: number,
+    opts: SignerOptions
+  ): Promise<number[]> {
+    const op = this.contract.call(
+      "buy_tickets",
+      addressToScVal(buyer),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(tier_index, { type: "u32" }),
+      nativeToScVal(quantity, { type: "u32" })
+    );
+    const result = await this.invoke(op, opts);
+    return scValToNative(result) as number[];
+  }
+
+  /**
    * Organizer checks in (redeems) a ticket at the door.
    */
   async redeem_ticket(
@@ -618,6 +641,23 @@ export class NovaEventsClient {
   }
 
   /**
+   * Current admin rotates the admin role to `new_admin`. Takes effect
+   * immediately: `new_admin` does not need to accept, so double-check it.
+   */
+  async set_admin(
+    current_admin: string,
+    new_admin: string,
+    opts: SignerOptions
+  ): Promise<void> {
+    const op = this.contract.call(
+      "set_admin",
+      addressToScVal(current_admin),
+      addressToScVal(new_admin)
+    );
+    await this.invoke(op, opts);
+  }
+
+  /**
    * Organizer disburses `amount` USDC from the event balance to `recipient`.
    * Only callable on an Ended event.
    */
@@ -681,6 +721,16 @@ export class NovaEventsClient {
     const result = await this.query(op);
     const vec = result.vec() ?? [];
     return vec.map(scValToSponsorship);
+  }
+
+  /** Returns the IDs of every event created by `organizer` (empty if none). */
+  async get_events_by_organizer(organizer: string): Promise<number[]> {
+    const op = this.contract.call(
+      "get_events_by_organizer",
+      addressToScVal(organizer)
+    );
+    const result = await this.query(op);
+    return scValToNative(result) as number[];
   }
 
   /** Returns the total number of events created. */
