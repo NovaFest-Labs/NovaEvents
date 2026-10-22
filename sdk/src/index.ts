@@ -520,8 +520,9 @@ export class NovaEventsClient {
   }
 
   /**
-   * Organizer cancels an Active event, refunding every unredeemed ticket
-   * buyer and every sponsor before marking the event Cancelled.
+   * Organizer cancels an Active event. Funds stay in the contract; each
+   * ticket holder and sponsor then withdraws their own refund with
+   * `claim_ticket_refund` / `claim_sponsorship_refund`.
    */
   async cancel_event(
     organizer: string,
@@ -534,6 +535,46 @@ export class NovaEventsClient {
       nativeToScVal(event_id, { type: "u32" })
     );
     await this.invoke(op, opts);
+  }
+
+  /**
+   * Owner of a ticket for a Cancelled event withdraws its tier price.
+   * A ticket checked in before the cancellation isn't refunded.
+   * @returns The amount refunded, in USDC stroops.
+   */
+  async claim_ticket_refund(
+    owner: string,
+    event_id: number,
+    ticket_id: number,
+    opts: SignerOptions
+  ): Promise<bigint> {
+    const op = this.contract.call(
+      "claim_ticket_refund",
+      addressToScVal(owner),
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(ticket_id, { type: "u32" })
+    );
+    const result = await this.invoke(op, opts);
+    return scValToNative(result) as bigint;
+  }
+
+  /**
+   * Sponsor of a Cancelled event withdraws everything they contributed,
+   * summed across all their sponsorships.
+   * @returns The amount refunded, in USDC stroops.
+   */
+  async claim_sponsorship_refund(
+    sponsor: string,
+    event_id: number,
+    opts: SignerOptions
+  ): Promise<bigint> {
+    const op = this.contract.call(
+      "claim_sponsorship_refund",
+      addressToScVal(sponsor),
+      nativeToScVal(event_id, { type: "u32" })
+    );
+    const result = await this.invoke(op, opts);
+    return scValToNative(result) as bigint;
   }
 
   /**

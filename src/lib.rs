@@ -102,6 +102,12 @@ pub enum Error {
     TooManyEvents = 33,
     /// Tier name must not be empty.
     EmptyTierName = 34,
+    /// Refunds can only be claimed once the event is `Cancelled`.
+    EventNotCancelled = 35,
+    /// This ticket or sponsor has already claimed its refund.
+    AlreadyRefunded = 36,
+    /// The caller has no sponsorship on this event to refund.
+    NoRefundDue = 37,
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -273,6 +279,10 @@ pub enum DataKey {
     ResaleRules(u32),
     /// The `Vec<Royalty>` recorded for a given event ID.
     Royalties(u32),
+    /// Set once a cancelled event's ticket has been refunded, per (event ID, ticket ID).
+    TicketRefunded(u32, u32),
+    /// Set once a sponsor has claimed their refund from a cancelled event.
+    SponsorRefunded(u32, Address),
 }
 
 fn require_not_paused(env: &Env) -> Result<(), Error> {
@@ -790,9 +800,17 @@ impl NovaEventsContract {
     }
 
     /// Organizer cancels an `Active` event.
-    /// Refunds every unredeemed ticket buyer their tier price and refunds every
-    /// sponsor their contributed amount, then marks the event `Cancelled`.
-    /// Cancelling with no buyers/sponsors still succeeds (the refund loops no-op).
+    ///
+    /// Only marks the event `Cancelled`; the collected funds stay in the
+    /// contract and each party withdraws their own refund with
+    /// `claim_ticket_refund` or `claim_sponsorship_refund`. Pushing every
+    /// refund from here would do work proportional to the event's size in
+    /// one transaction, which stops fitting Stellar's per-transaction limits
+    /// for any sizeable event (issue #109).
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `Unauthorized`,
+    /// - `EventNotActive` if the event is already `Ended` or `Cancelled`.
     pub fn cancel_event(env: Env, organizer: Address, event_id: u32) -> Result<(), Error> {
         require_not_paused(&env)?;
         organizer.require_auth();
@@ -809,57 +827,154 @@ impl NovaEventsContract {
             return Err(Error::EventNotActive);
         }
 
-        let token_addr: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::Token)
-            .ok_or(Error::NotInitialized)?;
-        let token_client = TokenClient::new(&env, &token_addr);
-
-        // Refund each unredeemed ticket owner their tier price.
-        let tiers: Vec<TicketTier> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Tiers(event_id))
-            .ok_or(Error::TiersNotFound)?;
-        let ticket_count: u32 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::TicketCounter(event_id))
-            .unwrap_or(0);
-        for ticket_id in 0..ticket_count {
-            let ticket: Ticket = env
-                .storage()
-                .persistent()
-                .get(&DataKey::Ticket(event_id, ticket_id))
-                .expect("recorded ticket index must exist");
-            if ticket.redeemed {
-                continue;
-            }
-            let tier: TicketTier = tiers
-                .get(ticket.tier_index)
-                .expect("ticket tier index must exist");
-            token_client.transfer(&env.current_contract_address(), &ticket.owner, &tier.price);
-        }
-
-        // Refund each sponsor their contributed amount.
-        let sponsorships: Vec<Sponsorship> = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Sponsorships(event_id))
-            .unwrap_or_else(|| Vec::new(&env));
-        for i in 0..sponsorships.len() {
-            let s: Sponsorship = sponsorships.get(i).unwrap();
-            token_client.transfer(&env.current_contract_address(), &s.sponsor, &s.amount);
-        }
-
-        // Any unredeemed tickets/sponsorship balances are returned, so zero out balance.
-        event.balance = 0;
         event.status = EventStatus::Cancelled;
         env.storage()
             .persistent()
             .set(&DataKey::Event(event_id), &event);
         Ok(())
+    }
+
+    /// Owner of a ticket for a `Cancelled` event withdraws its tier price.
+    ///
+    /// The refund goes to whoever owns the ticket now (tickets can't change
+    /// hands once an event is cancelled). A ticket checked in before the
+    /// cancellation was used, so it isn't refunded. Each ticket is refunded
+    /// at most once.
+    ///
+    /// Returns the amount refunded, in USDC stroops.
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `TicketNotFound`, `NotInitialized`,
+    /// - `EventNotCancelled` if the event isn't `Cancelled`,
+    /// - `NotOwner` if `owner` doesn't own the ticket,
+    /// - `AlreadyRedeemed` if the ticket was checked in,
+    /// - `AlreadyRefunded` if the refund was already claimed.
+    pub fn claim_ticket_refund(
+        env: Env,
+        owner: Address,
+        event_id: u32,
+        ticket_id: u32,
+    ) -> Result<i128, Error> {
+        require_not_paused(&env)?;
+        owner.require_auth();
+
+        let mut event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+        if event.status != EventStatus::Cancelled {
+            return Err(Error::EventNotCancelled);
+        }
+
+        let ticket: Ticket = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Ticket(event_id, ticket_id))
+            .ok_or(Error::TicketNotFound)?;
+        if ticket.owner != owner {
+            return Err(Error::NotOwner);
+        }
+        if ticket.redeemed {
+            return Err(Error::AlreadyRedeemed);
+        }
+        let refunded_key = DataKey::TicketRefunded(event_id, ticket_id);
+        if env.storage().persistent().has(&refunded_key) {
+            return Err(Error::AlreadyRefunded);
+        }
+
+        let tiers: Vec<TicketTier> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Tiers(event_id))
+            .ok_or(Error::TiersNotFound)?;
+        let amount = tiers
+            .get(ticket.tier_index)
+            .expect("ticket tier index must exist")
+            .price;
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+
+        env.storage().persistent().set(&refunded_key, &true);
+        event.balance -= amount;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        TokenClient::new(&env, &token_addr).transfer(
+            &env.current_contract_address(),
+            &owner,
+            &amount,
+        );
+        Ok(amount)
+    }
+
+    /// Sponsor of a `Cancelled` event withdraws everything they contributed,
+    /// summed across all their sponsorships, in a single claim.
+    ///
+    /// Returns the amount refunded, in USDC stroops.
+    ///
+    /// Errors:
+    /// - `ContractPaused`, `EventNotFound`, `NotInitialized`,
+    /// - `EventNotCancelled` if the event isn't `Cancelled`,
+    /// - `AlreadyRefunded` if this sponsor already claimed,
+    /// - `NoRefundDue` if `sponsor` never sponsored this event.
+    pub fn claim_sponsorship_refund(
+        env: Env,
+        sponsor: Address,
+        event_id: u32,
+    ) -> Result<i128, Error> {
+        require_not_paused(&env)?;
+        sponsor.require_auth();
+
+        let mut event: Event = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Event(event_id))
+            .ok_or(Error::EventNotFound)?;
+        if event.status != EventStatus::Cancelled {
+            return Err(Error::EventNotCancelled);
+        }
+        let refunded_key = DataKey::SponsorRefunded(event_id, sponsor.clone());
+        if env.storage().persistent().has(&refunded_key) {
+            return Err(Error::AlreadyRefunded);
+        }
+
+        let sponsorships: Vec<Sponsorship> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::Sponsorships(event_id))
+            .unwrap_or_else(|| Vec::new(&env));
+        let mut amount: i128 = 0;
+        for s in sponsorships.iter() {
+            if s.sponsor == sponsor {
+                amount += s.amount;
+            }
+        }
+        if amount == 0 {
+            return Err(Error::NoRefundDue);
+        }
+        let token_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Token)
+            .ok_or(Error::NotInitialized)?;
+
+        env.storage().persistent().set(&refunded_key, &true);
+        event.balance -= amount;
+        env.storage()
+            .persistent()
+            .set(&DataKey::Event(event_id), &event);
+
+        TokenClient::new(&env, &token_addr).transfer(
+            &env.current_contract_address(),
+            &sponsor,
+            &amount,
+        );
+        Ok(amount)
     }
 
     /// Transfer ticket ownership from the current owner to a new address.

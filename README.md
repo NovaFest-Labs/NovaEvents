@@ -62,7 +62,7 @@ This repository is built and contributed to in stages. The **core** is implement
 - Ticket purchase in USDC, settled on-chain, producing an ownership record
 - Check-in / redeem (organizer marks a ticket as used)
 - Sponsorship contributions in USDC, recorded publicly per sponsor, with a per-sponsor share (in basis points) readable on-chain
-- Event lifecycle controls: ending an event, and cancelling one with automatic refunds to ticket holders and sponsors
+- Event lifecycle controls: ending an event, and cancelling one, after which each ticket holder and sponsor claims their own refund
 - Organizer-triggered payouts to recipients (e.g. workers) after an event ends, recorded on-chain alongside the funds collected
 - Ticket transfer, plus per-event resale rules (price cap and organizer royalty)
 - An aggregated financial summary per event, so an auditor can verify collected vs. paid-out funds in one call

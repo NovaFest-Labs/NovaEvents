@@ -114,7 +114,9 @@ new NovaEventsClient(opts?: {
 | `buy_tickets(buyer, event_id, tier_index, quantity, opts)` → `number[]` | Purchase several tickets in one tier in a single transaction; returns the ticket IDs |
 | `redeem_ticket(organizer, event_id, ticket_id, opts)` | Mark a ticket as redeemed |
 | `end_event(organizer, event_id, opts)` | Close an event, transitioning it from Active to Ended |
-| `cancel_event(organizer, event_id, opts)` | Cancel an Active event, refunding tickets and sponsorships |
+| `cancel_event(organizer, event_id, opts)` | Cancel an Active event; ticket holders and sponsors then claim their own refunds |
+| `claim_ticket_refund(owner, event_id, ticket_id, opts)` → `bigint` | Owner of a ticket for a cancelled event withdraws its tier price; returns the amount |
+| `claim_sponsorship_refund(sponsor, event_id, opts)` → `bigint` | Sponsor of a cancelled event withdraws everything they contributed; returns the amount |
 | `sponsor_event(sponsor, event_id, amount, opts)` | Contribute USDC to an event |
 | `transfer_ticket(from, event_id, ticket_id, to, opts)` | Transfer ticket ownership (free reassignment) |
 | `set_resale_rules(organizer, event_id, max_price, royalty_bps, opts)` | Configure resale price cap and organizer royalty for an event |
