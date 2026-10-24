@@ -109,7 +109,8 @@ export interface ResaleRules {
  * Aggregated financial view of an event, so an auditor can confirm in one call
  * that every unit collected is still held or accounted for as a disbursement.
  *
- * The contract guarantees `total_collected == total_paid_out + balance`.
+ * The contract guarantees
+ * `total_collected == total_paid_out + refunded_total + balance`.
  * Resale royalties flow peer-to-peer (buyer → organizer) and never touch the
  * event balance, so they are tracked separately in `royalty_total`.
  */
@@ -124,6 +125,8 @@ export interface EventSummary {
   total_paid_out: bigint;
   /** Funds still held by the contract for this event. */
   balance: bigint;
+  /** Sum of every refund claimed via claim_ticket_refund / claim_sponsorship_refund. */
+  refunded_total: bigint;
   /** Sum of every resale royalty paid directly to the organizer. */
   royalty_total: bigint;
 }
@@ -229,6 +232,7 @@ function scValToEventSummary(val: xdr.ScVal): EventSummary {
     total_collected: native["total_collected"] as bigint,
     total_paid_out: native["total_paid_out"] as bigint,
     balance: native["balance"] as bigint,
+    refunded_total: native["refunded_total"] as bigint,
     royalty_total: native["royalty_total"] as bigint,
   };
 }

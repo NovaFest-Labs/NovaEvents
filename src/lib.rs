@@ -243,6 +243,9 @@ pub struct EventSummary {
     pub total_paid_out: i128,
     /// Funds still held by the contract for this event.
     pub balance: i128,
+    /// Sum of every refund claimed via `claim_ticket_refund` /
+    /// `claim_sponsorship_refund` after a cancellation.
+    pub refunded_total: i128,
     /// Sum of every resale royalty paid directly to the organizer.
     /// These payments flow peer-to-peer and never touch `balance`, but are
     /// recorded here so the full financial picture of the event is visible.
@@ -283,6 +286,9 @@ pub enum DataKey {
     TicketRefunded(u32, u32),
     /// Set once a sponsor has claimed their refund from a cancelled event.
     SponsorRefunded(u32, Address),
+    /// Running total refunded for an event via claim_ticket_refund /
+    /// claim_sponsorship_refund. Read by get_event_summary.
+    RefundedTotal(u32),
 }
 
 fn require_not_paused(env: &Env) -> Result<(), Error> {
@@ -295,6 +301,14 @@ fn require_not_paused(env: &Env) -> Result<(), Error> {
         return Err(Error::ContractPaused);
     }
     Ok(())
+}
+
+/// Adds `amount` to the event's running refunded total, read back by
+/// `get_event_summary` so its audit invariant holds after a cancellation.
+fn bump_refunded_total(env: &Env, event_id: u32, amount: i128) {
+    let key = DataKey::RefundedTotal(event_id);
+    let current: i128 = env.storage().persistent().get(&key).unwrap_or(0);
+    env.storage().persistent().set(&key, &(current + amount));
 }
 
 // ─── Contract ─────────────────────────────────────────────────────────────────
@@ -899,6 +913,7 @@ impl NovaEventsContract {
             .ok_or(Error::NotInitialized)?;
 
         env.storage().persistent().set(&refunded_key, &true);
+        bump_refunded_total(&env, event_id, amount);
         event.balance -= amount;
         env.storage()
             .persistent()
@@ -964,6 +979,7 @@ impl NovaEventsContract {
             .ok_or(Error::NotInitialized)?;
 
         env.storage().persistent().set(&refunded_key, &true);
+        bump_refunded_total(&env, event_id, amount);
         event.balance -= amount;
         env.storage()
             .persistent()
@@ -1512,7 +1528,8 @@ impl NovaEventsContract {
     /// `get_royalties`. The scans are bounded by MAX_TIERS, MAX_SPONSORSHIPS,
     /// MAX_PAYOUTS, and MAX_ROYALTIES.
     ///
-    /// The contract guarantees `total_collected == total_paid_out + balance`.
+    /// The contract guarantees
+    /// `total_collected == total_paid_out + refunded_total + balance`.
     /// `royalty_total` is tracked separately because royalties flow
     /// peer-to-peer and never touch the event balance.
     pub fn get_event_summary(env: Env, event_id: u32) -> Result<EventSummary, Error> {
@@ -1567,12 +1584,19 @@ impl NovaEventsContract {
             royalty_total += royalties.get(i).unwrap().amount;
         }
 
+        let refunded_total: i128 = env
+            .storage()
+            .persistent()
+            .get(&DataKey::RefundedTotal(event_id))
+            .unwrap_or(0);
+
         Ok(EventSummary {
             ticket_revenue,
             sponsorship_total,
             total_collected: ticket_revenue + sponsorship_total,
             total_paid_out,
             balance: event.balance,
+            refunded_total,
             royalty_total,
         })
     }

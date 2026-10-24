@@ -162,7 +162,8 @@ interface Payout      { recipient: string; amount: bigint }
 interface Royalty     { ticket_id: number; amount: bigint }
 interface ResaleRules { max_price: bigint; royalty_bps: number }
 interface EventSummary { ticket_revenue: bigint; sponsorship_total: bigint; total_collected: bigint;
-                        total_paid_out: bigint; balance: bigint; royalty_total: bigint }
+                        total_paid_out: bigint; balance: bigint; refunded_total: bigint;
+                        royalty_total: bigint }
 type EventStatus = "Active" | "Ended" | "Cancelled"
 ```
 

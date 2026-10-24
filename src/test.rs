@@ -2819,6 +2819,62 @@ fn test_get_royalties_empty_for_event_with_no_resales() {
 }
 
 #[test]
+fn test_get_event_summary_invariant_holds_through_partial_and_full_cancellation_refunds() {
+    // Issue #108: ticket_revenue/sponsorship_total still count everything
+    // ever collected even after a cancellation, so the audit invariant has
+    // to account for what's been refunded out via claim_ticket_refund /
+    // claim_sponsorship_refund, not just balance and total_paid_out.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    token_admin.mint(&buyer, &100_000_000_i128);
+    token_admin.mint(&sponsor, &500_000_000_i128);
+
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0); // 1 USDC
+    client.sponsor_event(&sponsor, &event_id, &50_000_000_i128); // 5 USDC
+    client.cancel_event(&organizer, &event_id);
+
+    let before_any_claim = client.get_event_summary(&event_id);
+    assert_eq!(before_any_claim.total_collected, 60_000_000_i128);
+    assert_eq!(before_any_claim.refunded_total, 0);
+    assert_eq!(
+        before_any_claim.total_collected,
+        before_any_claim.total_paid_out
+            + before_any_claim.refunded_total
+            + before_any_claim.balance
+    );
+
+    client.claim_ticket_refund(&buyer, &event_id, &ticket_id);
+
+    let after_ticket_claim = client.get_event_summary(&event_id);
+    assert_eq!(after_ticket_claim.refunded_total, 10_000_000_i128);
+    assert_eq!(after_ticket_claim.balance, 50_000_000_i128);
+    assert_eq!(
+        after_ticket_claim.total_collected,
+        after_ticket_claim.total_paid_out
+            + after_ticket_claim.refunded_total
+            + after_ticket_claim.balance
+    );
+
+    client.claim_sponsorship_refund(&sponsor, &event_id);
+
+    let after_both_claims = client.get_event_summary(&event_id);
+    assert_eq!(after_both_claims.refunded_total, 60_000_000_i128);
+    assert_eq!(after_both_claims.balance, 0);
+    assert_eq!(
+        after_both_claims.total_collected,
+        after_both_claims.total_paid_out
+            + after_both_claims.refunded_total
+            + after_both_claims.balance
+    );
+}
+
+#[test]
 fn test_get_event_summary_includes_royalty_total() {
     // After a paid resale the summary's royalty_total must reflect the
     // on-chain record; all other audit invariants must still hold.
