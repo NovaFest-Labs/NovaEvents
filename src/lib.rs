@@ -993,6 +993,24 @@ impl NovaEventsContract {
         Ok(amount)
     }
 
+    /// Returns whether a ticket's refund has already been claimed via
+    /// `claim_ticket_refund`. False for a ticket on an event that was never
+    /// cancelled, or that hasn't had its refund claimed yet.
+    pub fn is_ticket_refunded(env: Env, event_id: u32, ticket_id: u32) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::TicketRefunded(event_id, ticket_id))
+    }
+
+    /// Returns whether a sponsor's refund has already been claimed via
+    /// `claim_sponsorship_refund`. False for an event that was never
+    /// cancelled, or that this sponsor hasn't claimed a refund from yet.
+    pub fn is_sponsor_refunded(env: Env, event_id: u32, sponsor: Address) -> bool {
+        env.storage()
+            .persistent()
+            .has(&DataKey::SponsorRefunded(event_id, sponsor))
+    }
+
     /// Transfer ticket ownership from the current owner to a new address.
     ///
     /// This is a thin wrapper around `resell_ticket` with a zero price, so all

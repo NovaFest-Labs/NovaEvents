@@ -146,6 +146,8 @@ new NovaEventsClient(opts?: {
 | `get_balance(event_id)` | `bigint` | Contract's USDC balance for an event (stroops) |
 | `get_sponsor_share(event_id, sponsor)` | `bigint` | Sponsor's share in basis points (0–10 000) |
 | `get_event_summary(event_id)` | `EventSummary` | Aggregated financial summary of an event |
+| `is_ticket_refunded(event_id, ticket_id)` | `boolean` | Whether a ticket's refund has already been claimed |
+| `is_sponsor_refunded(event_id, sponsor)` | `boolean` | Whether a sponsor's refund has already been claimed |
 
 ---
 

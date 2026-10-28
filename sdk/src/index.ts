@@ -878,6 +878,36 @@ export class NovaEventsClient {
   }
 
   /**
+   * Returns whether a ticket's refund has already been claimed via
+   * claim_ticket_refund. False for a ticket on an event that was never
+   * cancelled, or that hasn't had its refund claimed yet.
+   */
+  async is_ticket_refunded(event_id: number, ticket_id: number): Promise<boolean> {
+    const op = this.contract.call(
+      "is_ticket_refunded",
+      nativeToScVal(event_id, { type: "u32" }),
+      nativeToScVal(ticket_id, { type: "u32" })
+    );
+    const result = await this.query(op);
+    return scValToNative(result) as boolean;
+  }
+
+  /**
+   * Returns whether a sponsor's refund has already been claimed via
+   * claim_sponsorship_refund. False for an event that was never cancelled,
+   * or that this sponsor hasn't claimed a refund from yet.
+   */
+  async is_sponsor_refunded(event_id: number, sponsor: string): Promise<boolean> {
+    const op = this.contract.call(
+      "is_sponsor_refunded",
+      nativeToScVal(event_id, { type: "u32" }),
+      addressToScVal(sponsor)
+    );
+    const result = await this.query(op);
+    return scValToNative(result) as boolean;
+  }
+
+  /**
    * Returns the sponsor's share of total sponsorship for an event in basis points
    * (1 bp = 0.01%, 10_000 bp = 100%).
    */

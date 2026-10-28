@@ -2356,6 +2356,59 @@ fn test_claim_ticket_refund_for_a_checked_in_ticket_rejected() {
 }
 
 #[test]
+fn test_is_ticket_refunded_reflects_claim_state() {
+    // Without this, a client can't tell "not yet claimed" from "already
+    // claimed" for an unredeemed ticket without speculatively calling the
+    // write method and parsing its AlreadyRefunded error.
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    let (event_id, ticket_id) =
+        cancelled_event_with_ticket(&env, &client, &token_admin, &organizer, &buyer);
+
+    assert!(!client.is_ticket_refunded(&event_id, &ticket_id));
+
+    client.claim_ticket_refund(&buyer, &event_id, &ticket_id);
+
+    assert!(client.is_ticket_refunded(&event_id, &ticket_id));
+}
+
+#[test]
+fn test_is_ticket_refunded_false_for_an_event_that_was_never_cancelled() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let buyer = Address::generate(&env);
+    token_admin.mint(&buyer, &100_000_000_i128);
+    let event_id = create_test_event(&env, &client, &organizer);
+    let ticket_id = client.buy_ticket(&buyer, &event_id, &0);
+
+    assert!(!client.is_ticket_refunded(&event_id, &ticket_id));
+}
+
+#[test]
+fn test_is_sponsor_refunded_reflects_claim_state() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let (_, token_admin, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let sponsor = Address::generate(&env);
+    token_admin.mint(&sponsor, &500_000_000_i128);
+    let event_id = create_test_event(&env, &client, &organizer);
+    client.sponsor_event(&sponsor, &event_id, &200_000_000_i128);
+    client.cancel_event(&organizer, &event_id);
+
+    assert!(!client.is_sponsor_refunded(&event_id, &sponsor));
+
+    client.claim_sponsorship_refund(&sponsor, &event_id);
+
+    assert!(client.is_sponsor_refunded(&event_id, &sponsor));
+}
+
+#[test]
 fn test_claim_sponsorship_refund_returns_the_total_across_contributions() {
     let env = Env::default();
     env.mock_all_auths();
