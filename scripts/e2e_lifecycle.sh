@@ -41,6 +41,8 @@ readonly ERR_UNAUTHORIZED=6
 readonly ERR_EVENT_NOT_ACTIVE=7
 readonly ERR_ALREADY_REDEEMED=8
 readonly ERR_INVALID_RECIPIENT=26
+readonly ERR_EVENT_NOT_CANCELLED=35
+readonly ERR_ALREADY_REFUNDED=36
 
 # ─── Output helpers ───────────────────────────────────────────────────────────
 
@@ -438,6 +440,92 @@ assert_eq "$((COLLECTED - PAYOUT_AMOUNT))" \
 WORKER_BAL_AFTER=$(token_balance "$WORKER")
 assert_eq "$PAYOUT_AMOUNT" "$((WORKER_BAL_AFTER - WORKER_BAL_BEFORE))" \
     "worker actually received the funds"
+
+# ─── 11. Cancellation & refunds ───────────────────────────────────────────────
+
+step "Cancellation & refunds"
+
+# A second, independent event: cancel_event only works on an Active event, and
+# EVENT_ID is already Ended above.
+TIERS2=$(jq -nc --arg p0 "$TIER0_PRICE" '[{name:"General",price:$p0,supply_cap:100}]')
+EVENT_ID2=$(tx "$ORGANIZER_KEY" create_event \
+    --organizer "$ORGANIZER" \
+    --name "NovaFest Abuja (cancelled)" \
+    --description "Exercises cancel_event's pull-based refund path" \
+    --venue "Transcorp Hilton, Abuja" \
+    --date_unix "$EVENT_DATE" \
+    --funding_goal "$FUNDING_GOAL" \
+    --tiers "$TIERS2")
+
+CTICKET_LIVE=$(tx "$ATTENDEE_KEY" buy_ticket --buyer "$ATTENDEE" --event_id "$EVENT_ID2" --tier_index 0)
+CTICKET_REDEEMED=$(tx "$WORKER_KEY" buy_ticket --buyer "$WORKER" --event_id "$EVENT_ID2" --tier_index 0)
+tx "$ORGANIZER_KEY" redeem_ticket --organizer "$ORGANIZER" --event_id "$EVENT_ID2" \
+    --ticket_id "$CTICKET_REDEEMED" >/dev/null
+
+tx "$SPONSOR_KEY" sponsor_event --sponsor "$SPONSOR" --event_id "$EVENT_ID2" \
+    --amount "$SPONSOR_AMOUNT" >/dev/null
+
+PRE_CANCEL_COLLECTED=$((TIER0_PRICE * 2 + SPONSOR_AMOUNT))
+assert_eq "$PRE_CANCEL_COLLECTED" "$(call get_balance --event_id "$EVENT_ID2" | tr -d '"')" \
+    "event 2 balance holds both ticket sales and the sponsorship"
+
+assert_error "$ERR_EVENT_NOT_CANCELLED" "claim_ticket_refund rejected before cancellation" \
+    "$ATTENDEE_KEY" claim_ticket_refund --owner "$ATTENDEE" --event_id "$EVENT_ID2" \
+    --ticket_id "$CTICKET_LIVE"
+
+tx "$ORGANIZER_KEY" cancel_event --organizer "$ORGANIZER" --event_id "$EVENT_ID2" >/dev/null
+assert_json_eq '.status' "Cancelled" "$(call get_event --event_id "$EVENT_ID2")" \
+    "event 2 status is Cancelled"
+
+# cancel_event is pull-based: it moves nothing. The full pre-cancellation
+# balance must still be sitting in the contract until each refund is claimed.
+assert_eq "$PRE_CANCEL_COLLECTED" "$(call get_balance --event_id "$EVENT_ID2" | tr -d '"')" \
+    "cancelling alone does not move any funds"
+
+assert_eq "false" "$(call is_ticket_refunded --event_id "$EVENT_ID2" --ticket_id "$CTICKET_LIVE" | tr -d '"')" \
+    "is_ticket_refunded is false before the claim"
+
+# Measured on the contract's own balance, not the attendee's: the attendee
+# submits this transaction themselves, so their native-token balance also
+# absorbs their own network fee, same reason sponsor_event's balance check
+# above reads the contract's side rather than the sponsor's.
+CONTRACT_BAL_BEFORE_CLAIM=$(token_balance "$CONTRACT_ID")
+tx "$ATTENDEE_KEY" claim_ticket_refund --owner "$ATTENDEE" --event_id "$EVENT_ID2" \
+    --ticket_id "$CTICKET_LIVE" >/dev/null
+CONTRACT_BAL_AFTER_CLAIM=$(token_balance "$CONTRACT_ID")
+assert_eq "$TIER0_PRICE" "$((CONTRACT_BAL_BEFORE_CLAIM - CONTRACT_BAL_AFTER_CLAIM))" \
+    "the ticket refund actually left the contract"
+
+assert_eq "true" "$(call is_ticket_refunded --event_id "$EVENT_ID2" --ticket_id "$CTICKET_LIVE" | tr -d '"')" \
+    "is_ticket_refunded is true after the claim"
+assert_error "$ERR_ALREADY_REFUNDED" "claiming the same ticket refund twice is rejected" \
+    "$ATTENDEE_KEY" claim_ticket_refund --owner "$ATTENDEE" --event_id "$EVENT_ID2" \
+    --ticket_id "$CTICKET_LIVE"
+
+assert_error "$ERR_ALREADY_REDEEMED" "a ticket redeemed before cancellation is not refunded" \
+    "$WORKER_KEY" claim_ticket_refund --owner "$WORKER" --event_id "$EVENT_ID2" \
+    --ticket_id "$CTICKET_REDEEMED"
+
+CONTRACT_BAL_BEFORE_CLAIM=$(token_balance "$CONTRACT_ID")
+tx "$SPONSOR_KEY" claim_sponsorship_refund --sponsor "$SPONSOR" --event_id "$EVENT_ID2" >/dev/null
+CONTRACT_BAL_AFTER_CLAIM=$(token_balance "$CONTRACT_ID")
+assert_eq "$SPONSOR_AMOUNT" "$((CONTRACT_BAL_BEFORE_CLAIM - CONTRACT_BAL_AFTER_CLAIM))" \
+    "the sponsorship refund actually left the contract"
+assert_eq "true" "$(call is_sponsor_refunded --event_id "$EVENT_ID2" --sponsor "$SPONSOR" | tr -d '"')" \
+    "is_sponsor_refunded is true after the claim"
+
+# Only the redeemed ticket's payment (never refundable) remains in the
+# contract: cancel_event itself moved nothing, and nobody can claim it back.
+assert_eq "$TIER0_PRICE" "$(call get_balance --event_id "$EVENT_ID2" | tr -d '"')" \
+    "event 2 balance is exactly the one un-refundable redeemed ticket"
+
+SUMMARY2=$(call get_event_summary --event_id "$EVENT_ID2")
+TOTAL_COLLECTED=$(printf '%s' "$SUMMARY2" | jq -r '.total_collected')
+TOTAL_PAID_OUT=$(printf '%s' "$SUMMARY2" | jq -r '.total_paid_out')
+REFUNDED_TOTAL=$(printf '%s' "$SUMMARY2" | jq -r '.refunded_total')
+BALANCE2=$(printf '%s' "$SUMMARY2" | jq -r '.balance')
+assert_eq "$TOTAL_COLLECTED" "$((TOTAL_PAID_OUT + REFUNDED_TOTAL + BALANCE2))" \
+    "get_event_summary's invariant holds after cancellation and refunds"
 
 # ─── Summary ──────────────────────────────────────────────────────────────────
 
