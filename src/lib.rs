@@ -1014,9 +1014,11 @@ impl NovaEventsContract {
     /// Transfer ticket ownership from the current owner to a new address.
     ///
     /// This is a thin wrapper around `resell_ticket` with a zero price, so all
-    /// validation and ownership-update logic lives in one place. Free transfers
-    /// (no resale rules configured) behave identically to before: no USDC moves,
-    /// only `ticket.owner` is updated.
+    /// validation and ownership-update logic lives in one place. A zero price
+    /// is always a free transfer, whether or not the organizer has configured
+    /// resale rules for the event: resale rules cap what a *paid* resale may
+    /// charge, they don't block a free gift. No USDC moves, only
+    /// `ticket.owner` is updated.
     ///
     /// Rules enforced (delegated to `resell_ticket`):
     /// - `from` must be the current ticket owner and must authorize the call.
@@ -1156,8 +1158,20 @@ impl NovaEventsContract {
             .get(&DataKey::ResaleRules(event_id));
 
         if let Some(rules) = rules {
-            if price <= 0 || price > rules.max_price {
+            // price == 0 is a free transfer (same as `transfer_ticket`).
+            // Resale rules cap what a *paid* resale may charge, they don't
+            // block a free gift just because the organizer has configured
+            // a max price and royalty.
+            if price < 0 || (price != 0 && price > rules.max_price) {
                 return Err(Error::ResalePriceExceedsCap);
+            }
+
+            if price == 0 {
+                ticket.owner = to;
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::Ticket(event_id, ticket_id), &ticket);
+                return Ok(());
             }
 
             // The buyer's USDC is moving, so the buyer must authorize this

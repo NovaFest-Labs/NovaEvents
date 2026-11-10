@@ -1363,7 +1363,10 @@ fn test_resell_ticket_above_cap_rejected() {
 }
 
 #[test]
-fn test_resell_ticket_zero_or_negative_price_rejected_when_rules_set() {
+fn test_resell_ticket_negative_price_rejected_when_rules_set() {
+    // A negative price is never valid. (price == 0 is a legitimate free
+    // transfer and must succeed even with rules set, see #105 and
+    // test_transfer_ticket_with_resale_rules_does_not_trigger_payment.)
     let env = Env::default();
     env.mock_all_auths();
 
@@ -1379,7 +1382,7 @@ fn test_resell_ticket_zero_or_negative_price_rejected_when_rules_set() {
 
     client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
 
-    let result = client.try_resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &0_i128);
+    let result = client.try_resell_ticket(&buyer, &event_id, &ticket_id, &recipient, &-1_i128);
     assert_eq!(result, Err(Ok(Error::ResalePriceExceedsCap)));
 }
 
@@ -2693,24 +2696,14 @@ fn test_transfer_ticket_delegates_to_resell_ticket_no_money_moves() {
 
 #[test]
 fn test_transfer_ticket_with_resale_rules_does_not_trigger_payment() {
-    // transfer_ticket(price=0) with resale rules set: price=0 falls through to
-    // the no-rules branch inside resell_ticket (price 0 is not > 0 so
-    // ResalePriceExceedsCap path is taken… wait — actually price=0 fails the
-    // rules check). Let's confirm transfer_ticket still works when rules exist
-    // by verifying it uses price=0 which skips the paid path entirely since
-    // resell_ticket only enters the paid branch when rules are set AND price > 0.
-    //
-    // With rules set and price=0: resell_ticket returns ResalePriceExceedsCap.
-    // That matches the existing behavior: transfer_ticket never consults rules.
-    // But now that transfer_ticket delegates with price=0, it will hit
-    // ResalePriceExceedsCap when rules are present. That is intentional and
-    // documented: callers should use resell_ticket for paid transfers.
-    // This test documents that transfer_ticket is blocked when rules are set
-    // (the free path is gone once the organizer opts in to resale controls).
+    // transfer_ticket is a free gift (price=0). Resale rules cap what an
+    // organizer lets a *paid* resale charge, they must not block a free
+    // transfer once the organizer happens to have configured them. See #105.
     let env = Env::default();
     env.mock_all_auths();
 
-    let (_, token_admin, _, client) = setup(&env);
+    let (token_addr, token_admin, _, client) = setup(&env);
+    let token = TokenClient::new(&env, &token_addr);
     let organizer = Address::generate(&env);
     let seller = Address::generate(&env);
     let buyer = Address::generate(&env);
@@ -2723,14 +2716,14 @@ fn test_transfer_ticket_with_resale_rules_does_not_trigger_payment() {
     // Organizer opts in to resale controls.
     client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
 
-    // transfer_ticket with rules set now returns ResalePriceExceedsCap because
-    // the sentinel price=0 fails the rules validation; callers must use
-    // resell_ticket with an explicit price when rules are configured.
-    let result = client.try_transfer_ticket(&seller, &event_id, &ticket_id, &buyer);
-    assert_eq!(result, Err(Ok(Error::ResalePriceExceedsCap)));
+    let seller_balance_before = token.balance(&seller);
 
-    // Ownership must be unchanged.
-    assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, seller);
+    client.transfer_ticket(&seller, &event_id, &ticket_id, &buyer);
+
+    // Ownership moves, no USDC changes hands on either side.
+    assert_eq!(client.get_ticket(&event_id, &ticket_id).owner, buyer);
+    assert_eq!(token.balance(&seller), seller_balance_before);
+    assert_eq!(token.balance(&buyer), 0);
 }
 
 // ─── Issue #56: royalty recording and get_event_summary ─────────────────────
