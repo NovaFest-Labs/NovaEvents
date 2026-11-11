@@ -94,7 +94,9 @@ pub enum Error {
     InvalidMaxResalePrice = 29,
     /// Royalty basis points must be between 0 and 10_000.
     InvalidRoyaltyBps = 30,
-    /// Resale price is not positive or exceeds the event's configured max resale price.
+    /// Resale price is negative, or a nonzero price exceeds the event's
+    /// configured max resale price. A price of exactly 0 is always a free
+    /// transfer and never returns this error.
     ResalePriceExceedsCap = 31,
     /// Event has reached the maximum number of recorded royalties.
     TooManyRoyalties = 32,
@@ -221,14 +223,14 @@ pub struct ResaleRules {
 }
 
 /// Aggregated financial view of an event, so an auditor can confirm in one call
-/// that every unit collected is still held or accounted for as a disbursement.
+/// that every unit collected is still held, paid out, or refunded.
 ///
-/// The contract guarantees `total_collected == total_paid_out + balance`.
+/// The contract guarantees
+/// `total_collected == total_paid_out + refunded_total + balance`.
 /// Resale royalties are paid peer-to-peer (buyer → organizer) and never touch
-/// the event balance, so they are tracked separately in `royalty_total` and
-/// reflected in `total_collected` for a complete audit picture.
-///
-/// Full audit identity: `total_collected == total_paid_out + balance`.
+/// the event balance, so `royalty_total` is tracked separately and is not
+/// part of `total_collected` or this identity — it's included purely for a
+/// complete audit picture.
 #[contracttype]
 #[derive(Clone, PartialEq, Debug)]
 pub struct EventSummary {
