@@ -214,7 +214,7 @@ pub struct Royalty {
 /// When set, `resell_ticket` caps the resale price at `max_price` and routes
 /// `royalty_bps` (basis points, 1 bp = 0.01%) of the price to the organizer.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct ResaleRules {
     /// The highest price a resale may be listed at, in USDC stroops.
     pub max_price: i128,

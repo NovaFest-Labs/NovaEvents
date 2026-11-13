@@ -1543,6 +1543,38 @@ fn test_set_resale_rules_validates_inputs() {
 }
 
 #[test]
+fn test_get_resale_rules() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    // No rules configured yet.
+    assert_eq!(client.get_resale_rules(&event_id), None);
+
+    client.set_resale_rules(&organizer, &event_id, &20_000_000_i128, &1_000u32);
+    assert_eq!(
+        client.get_resale_rules(&event_id),
+        Some(ResaleRules {
+            max_price: 20_000_000_i128,
+            royalty_bps: 1_000u32,
+        })
+    );
+
+    // A later call replaces the rules rather than merging with them.
+    client.set_resale_rules(&organizer, &event_id, &5_000_000_i128, &500u32);
+    assert_eq!(
+        client.get_resale_rules(&event_id),
+        Some(ResaleRules {
+            max_price: 5_000_000_i128,
+            royalty_bps: 500u32,
+        })
+    );
+}
+
+#[test]
 fn test_set_resale_rules_rejected_on_ended_event() {
     // Issue #63: set_resale_rules must be rejected on an Ended event.
     let env = Env::default();
