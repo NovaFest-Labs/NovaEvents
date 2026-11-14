@@ -61,6 +61,32 @@ fn create_test_event(env: &Env, client: &NovaEventsContractClient, organizer: &A
 // ─── Tests ───────────────────────────────────────────────────────────────────
 
 #[test]
+fn test_calls_before_initialize_return_not_initialized() {
+    // NotInitialized is returned from ~12 call sites across the contract,
+    // but every other test's setup() calls initialize() immediately, so
+    // this whole error path had zero coverage anywhere in the suite.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(NovaEventsContract, ());
+    let client = NovaEventsContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+
+    assert_eq!(client.try_get_token(), Err(Ok(Error::NotInitialized)));
+    assert_eq!(client.try_get_admin(), Err(Ok(Error::NotInitialized)));
+    assert_eq!(client.try_pause(&admin), Err(Ok(Error::NotInitialized)));
+    assert_eq!(client.try_unpause(&admin), Err(Ok(Error::NotInitialized)));
+    assert_eq!(
+        client.try_set_admin(&admin, &admin),
+        Err(Ok(Error::NotInitialized))
+    );
+
+    // is_paused is documented to never error — it must default to false
+    // rather than panicking when nothing has been stored yet.
+    assert!(!client.is_paused());
+}
+
+#[test]
 fn test_create_event() {
     let env = Env::default();
     env.mock_all_auths();
@@ -102,6 +128,21 @@ fn test_multiple_events_get_distinct_ids() {
     assert_eq!(id1, 1);
     assert_eq!(id2, 2);
     assert_eq!(client.event_count(), 3);
+}
+
+#[test]
+fn test_ticket_count_zero_for_a_fresh_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+    let organizer = Address::generate(&env);
+    let event_id = create_test_event(&env, &client, &organizer);
+
+    assert_eq!(client.ticket_count(&event_id), 0);
+
+    // Never errors, even for an event id that was never created.
+    assert_eq!(client.ticket_count(&999), 0);
 }
 
 #[test]
