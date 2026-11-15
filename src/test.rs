@@ -113,6 +113,22 @@ fn test_create_event() {
 }
 
 #[test]
+fn test_get_tiers_rejected_for_an_event_that_was_never_created() {
+    // get_tiers has no event-existence check of its own (unlike
+    // buy_tickets/update_event_details, which check EventNotFound before
+    // ever reaching their own tiers lookup), so this is the only place
+    // TiersNotFound is actually reachable without an artificial internal
+    // inconsistency.
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let (_, _, _, client) = setup(&env);
+
+    let result = client.try_get_tiers(&999);
+    assert_eq!(result, Err(Ok(Error::TiersNotFound)));
+}
+
+#[test]
 fn test_multiple_events_get_distinct_ids() {
     let env = Env::default();
     env.mock_all_auths();

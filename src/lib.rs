@@ -128,7 +128,7 @@ pub struct TierInput {
 
 /// Stored state for a ticket tier, extended with live sales count.
 #[contracttype]
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct TicketTier {
     pub name: String,
     pub price: i128,
