@@ -32,3 +32,29 @@ jobs:
 
       - name: Build WASM
         run: cargo build --target wasm32v1-none --release
+
+  sdk:
+    name: SDK Type Check & Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: sdk/package-lock.json
+
+      - name: Install dependencies
+        working-directory: sdk
+        run: npm ci
+
+      - name: Type check
+        working-directory: sdk
+        run: npx tsc --noEmit
+
+      - name: Build
+        working-directory: sdk
+        run: npm run build
