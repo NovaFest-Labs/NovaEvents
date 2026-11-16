@@ -644,10 +644,12 @@ export class NovaEventsClient {
 
   /**
    * Transfers ticket ownership from `from` to `to`, paid according to the
-   * event's resale rules. With no resale rules configured, this behaves
-   * exactly like `transfer_ticket` (a free reassignment) and `price` is
-   * ignored. With resale rules set, `price` must be positive and capped at
-   * the configured max price; both `from` and `to` must sign.
+   * event's resale rules. A `price` of exactly 0 is always a free transfer
+   * (equivalent to `transfer_ticket`), whether or not resale rules are
+   * configured — resale rules cap what a *paid* resale may charge, they
+   * don't block a free gift. With resale rules set and a nonzero price,
+   * the price must be positive and capped at the configured max price;
+   * both `from` and `to` must sign.
    */
   async resell_ticket(
     from: string,
