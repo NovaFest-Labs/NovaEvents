@@ -49,7 +49,7 @@ cargo build
 cargo test
 ```
 
-All 18 tests must pass before you open a PR. New functions require new tests.
+All tests must pass before you open a PR. New functions require new tests.
 
 ### Build the WASM artifact
 
