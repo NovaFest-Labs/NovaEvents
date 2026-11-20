@@ -81,6 +81,8 @@ through a full event lifecycle using only the Stellar CLI and RPC:
 ```
 deploy -> initialize -> create_event -> buy_ticket -> transfer_ticket
        -> redeem_ticket -> sponsor_event -> end_event -> payout
+       -> create_event -> cancel_event -> claim_ticket_refund
+       -> claim_sponsorship_refund
 ```
 
 At every stage it asserts both the happy path and the expected `#[contracterror]`
@@ -115,6 +117,16 @@ The script exercises the full lifecycle, including `end_event -> payout`:
 after ending the event it confirms ticket sales and sponsorships are locked,
 then disburses a payout and verifies the recipient actually received the
 funds.
+
+It then creates a second event specifically to exercise cancellation and the
+pull-based refund path: `cancel_event` alone moves no funds, so it confirms
+the event's balance is untouched immediately after cancelling, then has the
+attendee and sponsor each claim their own refund and verifies the tokens
+actually left the contract, that a ticket redeemed before the cancellation is
+correctly excluded from refunds, that double-claiming is rejected, and that
+`get_event_summary`'s audited invariant
+(`total_collected == total_paid_out + refunded_total + balance`) still holds
+afterward.
 
 ## Making a contribution
 

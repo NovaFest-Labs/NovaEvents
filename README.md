@@ -118,8 +118,9 @@ cargo test
 
 `cargo test` runs against an in-process `Env::default()`. To verify the contract
 through the real Stellar CLI and RPC path — deploy, initialize, create an event,
-sell tickets, transfer and check one in, take a sponsorship, and disburse a
-payout — run the lifecycle script:
+sell tickets, transfer and check one in, take a sponsorship, disburse a payout,
+and cancel a second event to exercise the pull-based ticket/sponsorship refund
+path — run the lifecycle script:
 
 ```bash
 # Local Soroban sandbox (requires a running Docker daemon)
