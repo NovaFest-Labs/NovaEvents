@@ -124,10 +124,18 @@ fi
 # ─── 2. Deploy Contract ───────────────────────────────────────────────────────
 
 step "Deploying NovaEvents to Stellar testnet"
+# Only the last stdout line is the contract ID — same defensive assumption
+# scripts/e2e_lifecycle.sh makes for this identical command, in case the CLI
+# ever prints an extra progress/diagnostic line to stdout instead of stderr.
 CONTRACT_ID="$("$CLI_BIN" contract deploy \
     --wasm "$WASM_PATH" \
     --network "$NETWORK" \
-    --source "$SOURCE_KEY")"
+    --source "$SOURCE_KEY" | tail -1)"
+
+if [[ "$CONTRACT_ID" != C* ]]; then
+    error "Deploy did not return a contract ID (got: '$CONTRACT_ID')."
+    exit 1
+fi
 
 success "Contract deployed successfully!"
 
