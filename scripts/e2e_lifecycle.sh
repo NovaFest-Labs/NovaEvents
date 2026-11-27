@@ -7,6 +7,8 @@
 #
 #   deploy -> initialize -> create_event -> buy_ticket -> transfer_ticket
 #          -> redeem_ticket -> sponsor_event -> end_event -> payout
+#          -> create_event -> cancel_event -> claim_ticket_refund
+#          -> claim_sponsorship_refund
 #
 # Unlike `cargo test`, which runs against an in-process `Env::default()`, this
 # exercises the real serialization, auth, and cross-contract token path, so it
